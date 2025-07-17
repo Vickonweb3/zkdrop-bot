@@ -1,4 +1,0 @@
-python-telegram-bot==20.3
-pymongo==4.6.0
-requests
-schedule
