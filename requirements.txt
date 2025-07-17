@@ -1,0 +1,5 @@
+python-telegram-bot==20.6
+pymongo==4.6.3
+requests
+beautifulsoup4
+schedule
