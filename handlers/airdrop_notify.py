@@ -1,34 +1,67 @@
-from aiogram import Dispatcher
-from aiogram.types import Message
-from services.zealy_checker import fetch_zealy_tasks
-from utils.scam_filter import is_scammy
-from database.db import get_all_users
+from aiogram import types, Dispatcher
 from config.settings import ADMIN_ID
+from utils.scam_filter import is_scam
+from database.db import get_all_users
+from aiogram.utils.exceptions import BotBlocked
 
-# 📢 Function to notify all users about new airdrops
-async def notify_users(bot):
-    tasks = fetch_zealy_tasks()
-    if not tasks:
+# ✨ Format airdrop message
+def format_airdrop(title, description, link, project):
+    return (
+        f"🚀 *New Airdrop Alert!*\n\n"
+        f"*Project:* {project}\n"
+        f"*Title:* {title}\n"
+        f"*Description:* {description}\n"
+        f"*Link:* [Click here]({link})\n\n"
+        f"🔁 Share with your friends & stay active!\n"
+        f"#zkSync #airdrop"
+    )
+
+# 🪂 Admin-only /airdrop
+async def airdrop_command(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ You can't post airdrops.")
         return
 
-    for task in tasks:
-        if is_scammy(task["title"]):
-            continue  # Skip scammy or duplicate-looking tasks
+    try:
+        # Example: /airdrop ProjectName | Title | Description | https://link.com
+        data = message.text.split(" ", 1)[1]
+        project, title, description, link = [x.strip() for x in data.split("|")]
 
-        text = f"🚀 *New Airdrop Opportunity!*\n\n🔸 {task['title']}\n🔗 [Join Airdrop]({task['link']})"
-        users = get_all_users()
+        # 🧠 Scam filter
+        if is_scam(title + description + link + project):
+            await message.answer("⚠️ This airdrop looks suspicious. Rejected.")
+            return
+
+        msg = format_airdrop(title, description, link, project)
+        users = await get_all_users()
+
+        count = 0
         for user_id in users:
             try:
-                await bot.send_message(chat_id=user_id, text=text, parse_mode="Markdown", disable_web_page_preview=True)
-            except:
-                continue  # Skip failed messages
+                await message.bot.send_message(user_id, msg, parse_mode="Markdown", disable_web_page_preview=True)
+                count += 1
+            except BotBlocked:
+                continue
 
-# Optional: Message-based trigger (used only for manual test, not required)
-async def notify_test(message: Message):
-    if message.from_user.id != ADMIN_ID:
+        await message.answer(f"✅ Airdrop sent to {count} users.")
+
+    except Exception as e:
+        await message.answer("❌ Format error. Use:\n\n`/airdrop Project | Title | Description | Link`", parse_mode="Markdown")
+
+# 🔁 Scheduled posts (auto from Zealy etc.)
+async def send_airdrop_to_all(bot, title, description, link, project):
+    if is_scam(title + description + link + project):
         return
-    await notify_users(message.bot)
-    await message.answer("✅ Airdrop notifications sent.")
 
+    msg = format_airdrop(title, description, link, project)
+    users = await get_all_users()
+
+    for user_id in users:
+        try:
+            await bot.send_message(user_id, msg, parse_mode="Markdown", disable_web_page_preview=True)
+        except:
+            continue
+
+# 🔌 Register
 def register_notify(dp: Dispatcher):
-    dp.register_message_handler(notify_test, commands=['notify'])
+    dp.register_message_handler(airdrop_command, commands=["airdrop"])
