@@ -1,16 +1,35 @@
 from aiogram import types, Dispatcher
 from config.settings import OWNER_USERNAME
+from handlers.menu_handler import show_main_menu
+from database.db import save_user, is_banned
 
+# 🚀 Start command
 async def start_command(message: types.Message):
+    user_id = message.from_user.id
+    username = message.from_user.username or "NoUsername"
+
+    # ❌ Banned users
+    if await is_banned(user_id):
+        await message.answer("⛔ You are banned from using this bot.")
+        return
+
+    # ✅ Save to database
+    await save_user(user_id, username)
+
+    # 📣 Welcome message
     welcome_text = (
-        "🚀 *Welcome to ZKDrop Bot!*\n\n"
-        "I'm your guide to discovering new airdrops and reward campaigns (Zealy & more).\n\n"
-        "🔗 *To get started:* \n"
-        "1. Make sure to follow us on [X (Twitter)](https://twitter.com/VickOnWeb3)\n"
-        "2. Then come back here and type /menu to view tasks and updates.\n\n"
-        f"👨‍💻 Need help? Contact dev: {OWNER_USERNAME}"
+        "🌐 *Welcome to zkDrop Bot!*\n\n"
+        "🤖 I'm your Web3 sidekick. I’ll alert you to fresh zkSync tasks, Zealy campaigns, and more.\n\n"
+        "🐦 *Step 1:* Follow us on Twitter: [@VickOnWeb3](https://twitter.com/VickOnWeb3)\n"
+        "📲 *Step 2:* Explore tasks using the menu below.\n\n"
+        f"🆘 For support, contact {OWNER_USERNAME}"
     )
+
     await message.answer(welcome_text, parse_mode="Markdown", disable_web_page_preview=True)
 
+    # 📲 Show main menu
+    await show_main_menu(message)
+
+# 🔌 Register
 def register_start(dp: Dispatcher):
     dp.register_message_handler(start_command, commands=["start"])
