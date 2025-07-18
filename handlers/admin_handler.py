@@ -1,67 +1,45 @@
 from aiogram import types, Dispatcher
 from config.settings import ADMIN_ID
-from database.db import get_user_count, get_all_users
-from services.zealy_checker import fetch_zealy_tasks
+from database.db import count_users
+from aiogram.utils.markdown import bold
 
-# 👑 Admin-only panel
-async def admin_panel(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
+# 🛡️ Admin-only checker
+def is_admin(user_id):
+    return user_id == ADMIN_ID
+
+# 📊 /stats command
+async def view_stats(message: types.Message):
+    if not is_admin(message.from_user.id):
         await message.answer("⛔ Access denied.")
         return
 
+    user_count = await count_users()
     text = (
-        "👑 *Admin Panel*\n\n"
-        "/stats - View bot stats\n"
-        "/airdrops - Check airdrops manually\n"
-        "/broadcast YourMessage - Send message to all users\n"
-        "/reload - Restart acknowledgment"
+        "📊 *Bot Stats*\n\n"
+        f"👥 Total Users: *{user_count}*\n"
+        "📡 System Status: *Online*\n"
+        "📅 Scheduler: *Active*\n"
     )
     await message.answer(text, parse_mode="Markdown")
 
-# 📊 Stats
-async def bot_stats(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
+# 📣 /broadcast command (placeholder to activate later)
+async def broadcast(message: types.Message):
+    if not is_admin(message.from_user.id):
+        await message.answer("⛔ Access denied.")
         return
-    count = get_user_count()
-    await message.answer(f"📊 Total users: {count}")
 
-# 🚀 Manual airdrop trigger
-async def manual_airdrop_check(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    tasks = fetch_zealy_tasks()
-    if not tasks:
-        await message.answer("😕 No current airdrops found.")
-    else:
-        response = "📢 *Zealy Airdrops:*\n\n"
-        for task in tasks:
-            response += f"🔹 {task['title']} - [View]({task['link']})\n"
-        await message.answer(response, parse_mode="Markdown", disable_web_page_preview=True)
+    await message.answer("📣 Broadcast feature will be added in Phase 2.")
 
-# 📣 Broadcast
-async def broadcast_message(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    text = message.text.replace('/broadcast ', '')
-    users = get_all_users()
-    success = 0
-    for user_id in users:
-        try:
-            await message.bot.send_message(chat_id=user_id, text=text)
-            success += 1
-        except:
-            continue
-    await message.answer(f"✅ Sent to {success} users.")
-
-# ♻️ Reload
+# 🔁 /reload command
 async def reload_bot(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
+    if not is_admin(message.from_user.id):
+        await message.answer("⛔ Access denied.")
         return
-    await message.answer("♻️ Systems reloaded (mock).")
 
+    await message.answer("🔄 Bot systems reloaded (simulated).")
+
+# 📍 Register admin commands
 def register_admin(dp: Dispatcher):
-    dp.register_message_handler(admin_panel, commands=['admin'])
-    dp.register_message_handler(bot_stats, commands=['stats'])
-    dp.register_message_handler(manual_airdrop_check, commands=['airdrops'])
-    dp.register_message_handler(broadcast_message, commands=['broadcast'])
-    dp.register_message_handler(reload_bot, commands=['reload'])
+    dp.register_message_handler(view_stats, commands=["stats"])
+    dp.register_message_handler(broadcast, commands=["broadcast"])
+    dp.register_message_handler(reload_bot, commands=["reload"])
