@@ -1,7 +1,7 @@
 import asyncio
 from utils.scraper import scrape_zealy_airdrops
-from handlers.airdrop_notify import send_airdrop_to_users
-from config.settings import TASK_INTERVAL_MINUTES, SCRAPE_INTERVAL_HOURS
+from handlers.airdrop_notify import send_airdrop_to_all  # ✅ fixed import
+from config.settings import TASK_INTERVAL_MINUTES
 import logging
 
 # 🧠 Background scheduler
@@ -21,7 +21,13 @@ async def run_scheduler(bot):
             # 📢 Send airdrops if found
             if new_airdrops:
                 for drop in new_airdrops:
-                    await send_airdrop_to_users(bot, drop)
+                    await send_airdrop_to_all(
+                        bot,
+                        drop["title"],
+                        drop["description"],
+                        drop["link"],
+                        drop["project"]
+                    )
             else:
                 logging.info("⚠️ No new airdrops found.")
 
