@@ -1,5 +1,6 @@
 from pymongo import MongoClient
 from config.settings import MONGO_URI
+from datetime import datetime  # <== You also forgot to import this!
 
 # Connect to MongoDB
 client = MongoClient(MONGO_URI)
@@ -8,8 +9,8 @@ db = client["zkdrop_bot"]
 # Collections
 users_collection = db["users"]
 
-# 🔘 Add user to database
-def add_user(user_id, username=None):
+# 🔘 Save user to database
+def save_user(user_id, username=None):  # Renamed from add_user
     if not users_collection.find_one({"user_id": user_id}):
         users_collection.insert_one({
             "user_id": user_id,
