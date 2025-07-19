@@ -16,7 +16,7 @@ async def run_scheduler(bot):
             logging.info("🔄 Running background tasks...")
 
             # ⏰ Scrape new airdrops
-            new_airdrops = await scrape_zealy_airdrops()
+            new_airdrops =  scrape_zealy_airdrops()
 
             # 📢 Send airdrops if found
             if new_airdrops:
