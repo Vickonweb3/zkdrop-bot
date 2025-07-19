@@ -16,7 +16,7 @@ def save_user(user_id, username=None):
             "user_id": user_id,
             "username": username,
             "joined_at": datetime.utcnow(),
-            "banned": False  # Default value
+            "banned": False
         })
 
 # 🔍 Check if user is banned
@@ -40,5 +40,6 @@ def user_exists(user_id):
 def get_all_user_ids():
     return [user["user_id"] for user in users_collection.find({}, {"user_id": 1})]
 
-# 🔁 Alias for compatibility
+# ✅ Aliases for compatibility with other handlers
 get_all_users = get_all_user_ids
+count_users = get_total_users
