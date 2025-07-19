@@ -16,18 +16,17 @@ def format_airdrop(title, description, link, project):
         f"#zkSync #airdrop"
     )
 
-# 🪂 Admin-only /airdrop
+# 🪂 Admin-only /airdrop command
 async def airdrop_command(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         await message.answer("⛔ You can't post airdrops.")
         return
 
     try:
-        # Example: /airdrop ProjectName | Title | Description | https://link.com
+        # Format: /airdrop Project | Title | Description | https://link.com
         data = message.text.split(" ", 1)[1]
         project, title, description, link = [x.strip() for x in data.split("|")]
 
-        # 🧠 Scam filter
         if is_scam(title + description + link + project):
             await message.answer("⚠️ This airdrop looks suspicious. Rejected.")
             return
