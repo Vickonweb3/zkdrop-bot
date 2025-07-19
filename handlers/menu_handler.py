@@ -2,9 +2,8 @@ from aiogram import types, Dispatcher
 from config.settings import OWNER_USERNAME
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-
 # 🎛️ /menu command handler
-async def show_menu(message: types.Message):
+async def show_main_menu(message: types.Message):
     kb = InlineKeyboardMarkup(row_width=2)
 
     kb.add(
@@ -24,11 +23,15 @@ async def handle_menu_callback(call: types.CallbackQuery):
     if call.data == "airdrops":
         await call.message.edit_text("🚀 Latest airdrops will be listed here soon (auto updates coming).")
     elif call.data == "stats":
-        await call.message.edit_text("📊 Users Registered: *loading...*\nAirdrops Tracked: *loading...*", parse_mode="Markdown")
+        await call.message.edit_text(
+            "📊 Users Registered: *loading...*\nAirdrops Tracked: *loading...*",
+            parse_mode="Markdown"
+        )
     else:
         await call.message.answer("❌ Unknown option.")
 
 
+# 📌 Register the handlers
 def register_menu(dp: Dispatcher):
-    dp.register_message_handler(show_menu, commands=["menu"])
+    dp.register_message_handler(show_main_menu, commands=["menu"])
     dp.register_callback_query_handler(handle_menu_callback)
