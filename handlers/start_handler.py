@@ -9,12 +9,12 @@ async def start_command(message: types.Message):
     username = message.from_user.username or "NoUsername"
 
     # ❌ Banned users
-    if await is_banned(user_id):
+    if is_banned(user_id):  # Also remove await here if is_banned is sync
         await message.answer("⛔ You are banned from using this bot.")
         return
 
     # ✅ Save to database
-    await save_user(user_id, username)
+    save_user(user_id, username)  # <-- No 'await' needed
 
     # 📣 Welcome message
     welcome_text = (
