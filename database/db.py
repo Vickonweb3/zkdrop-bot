@@ -16,7 +16,7 @@ def save_user(user_id, username=None):
             "user_id": user_id,
             "username": username,
             "joined_at": datetime.utcnow(),
-            "banned": False  # optional: default value
+            "banned": False  # Default value
         })
 
 # 🔍 Check if user is banned
@@ -24,7 +24,7 @@ def is_banned(user_id):
     user = users_collection.find_one({"user_id": user_id})
     return user and user.get("banned", False)
 
-# ⛔ Optional: Ban a user
+# ⛔ Ban a user
 def ban_user(user_id):
     users_collection.update_one({"user_id": user_id}, {"$set": {"banned": True}})
 
@@ -39,3 +39,6 @@ def user_exists(user_id):
 # 📤 Get all user IDs (for broadcasting)
 def get_all_user_ids():
     return [user["user_id"] for user in users_collection.find({}, {"user_id": 1})]
+
+# 🔁 Alias for compatibility
+get_all_users = get_all_user_ids
