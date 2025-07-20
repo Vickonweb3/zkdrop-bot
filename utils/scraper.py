@@ -4,21 +4,29 @@ from datetime import datetime
 
 def scrape_zealy_airdrops():
     url = "https://zealy.io/discover"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    }
 
     try:
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "html.parser")
 
-        # TODO: Inspect if this class name is valid
+        # Check exact class by inspecting site — adjust if dynamic
         airdrop_elements = soup.find_all("div", class_="ProjectCard_root__")
+
+        if not airdrop_elements:
+            print("[⚠️ SCRAPER WARNING]: No airdrop elements found. Zealy layout may have changed.")
+            return []
 
         scraped_data = []
         for el in airdrop_elements[:5]:
-            name = el.find("h3").text.strip() if el.find("h3") else "Unknown Project"
+            name_tag = el.find("h3")
             anchor = el.find("a")
+
+            name = name_tag.text.strip() if name_tag else "Unknown Project"
             link = anchor["href"] if anchor and "href" in anchor.attrs else "#"
             full_link = f"https://zealy.io{link}" if link.startswith("/") else link
 
@@ -31,6 +39,9 @@ def scrape_zealy_airdrops():
 
         return scraped_data
 
+    except requests.exceptions.RequestException as req_err:
+        print(f"[❌ SCRAPER ERROR - Request]: {req_err}")
     except Exception as e:
-        print(f"[❌ SCRAPER ERROR]: {e}")
-        return []
+        print(f"[❌ SCRAPER ERROR - General]: {e}")
+
+    return []
