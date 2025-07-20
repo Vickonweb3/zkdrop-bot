@@ -2,8 +2,13 @@ from pymongo import MongoClient
 from config.settings import MONGO_URI
 from datetime import datetime
 
-# Connect to MongoDB
-client = MongoClient(MONGO_URI)
+# ✅ Connect to MongoDB securely (Render-compatible)
+client = MongoClient(
+    MONGO_URI,
+    tls=True,
+    tlsAllowInvalidCertificates=True
+)
+
 db = client["zkdrop_bot"]
 
 # Collections
