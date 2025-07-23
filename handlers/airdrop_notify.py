@@ -2,7 +2,7 @@ from aiogram import types, Dispatcher
 from config.settings import ADMIN_ID
 from utils.scam_filter import is_scam
 from database.db import get_all_users
-from aiogram.exceptions import TelegramForbiddenError as BotBlocked  # ✅ v3 import
+from aiogram.exceptions import TelegramForbiddenError as BotBlocked  # ✅ aiogram v3 import
 
 # ✨ Format airdrop message
 def format_airdrop(title, description, link, project):
@@ -52,4 +52,22 @@ async def airdrop_command(message: types.Message):
             parse_mode="Markdown"
         )
 
-# 🔁 Scheduled posts (
+# 🔁 Scheduled airdrop sender (used by scheduler)
+async def send_airdrop_to_all(bot, title, description, link, project):
+    if is_scam(title + description + link + project):
+        return
+
+    msg = format_airdrop(title, description, link, project)
+    users = await get_all_users()
+
+    for user_id in users:
+        try:
+            await bot.send_message(
+                user_id, msg, parse_mode="Markdown", disable_web_page_preview=True
+            )
+        except BotBlocked:
+            continue
+
+# 🔌 Register
+def register_notify(dp: Dispatcher):
+    dp.message.register(airdrop_command, commands=["airdrop"])
