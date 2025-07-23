@@ -13,6 +13,7 @@ db = client["zkdrop_bot"]
 
 # Collections
 users_collection = db["users"]
+participants_collection = db["participants"]
 
 # 🔘 Save user to database
 def save_user(user_id, username=None):
@@ -48,3 +49,19 @@ def get_all_user_ids():
 # ✅ Aliases for compatibility with other handlers
 get_all_users = get_all_user_ids
 count_users = get_total_users
+
+# ✅ Add participant to a community
+def add_participant(user_id, community_id):
+    participants_collection.update_one(
+        {"user_id": user_id, "community_id": community_id},
+        {"$setOnInsert": {
+            "user_id": user_id,
+            "community_id": community_id,
+            "joined_at": datetime.utcnow()
+        }},
+        upsert=True
+    )
+
+# 📊 Get total participants for a community
+def get_total_participants(community_id):
+    return participants_collection.count_documents({"community_id": community_id})
