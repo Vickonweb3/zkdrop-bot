@@ -1,20 +1,23 @@
-from aiogram import types, Dispatcher
+from aiogram import types, Router
 from config.settings import OWNER_USERNAME
 from handlers.menu_handler import show_main_menu
 from database.db import save_user, is_banned
 
+router = Router()
+
 # 🚀 Start command
+@router.message(commands=["start"])
 async def start_command(message: types.Message):
     user_id = message.from_user.id
     username = message.from_user.username or "NoUsername"
 
     # ❌ Banned users
-    if is_banned(user_id):  # Also remove await here if is_banned is sync
+    if is_banned(user_id):  # Also remove 'await' if it's a sync function
         await message.answer("⛔ You are banned from using this bot.")
         return
 
     # ✅ Save to database
-    save_user(user_id, username)  # <-- No 'await' needed
+    save_user(user_id, username)
 
     # 📣 Welcome message
     welcome_text = (
@@ -30,6 +33,6 @@ async def start_command(message: types.Message):
     # 📲 Show main menu
     await show_main_menu(message)
 
-# 🔌 Register
-def register_start(dp: Dispatcher):
-    dp.register_message_handler(start_command, commands=["start"])
+# 🔌 Register router
+def register_start(dp):
+    dp.include_router(router)
