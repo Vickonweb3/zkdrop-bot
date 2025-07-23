@@ -1,12 +1,17 @@
-# services/task_manager.py
+# Legends 
 
 from aiogram import types
+from database.db import add_participant
 
-# 🧠 Placeholder for task validation logic
+# 🧠 Simulate task verification + record user as participant
 async def handle_task_verification(message: types.Message):
-    await message.answer(
-        "✅ Task verification coming soon.\n\n"
-        "For now, stay active and keep completing quests manually!"
-    )
+    user_id = message.from_user.id
+    community_id = "zkcrew123"  # You can make this dynamic later
 
-# 🔌 Register this in menu_handler later if needed
+    # Add the user as a participant
+    add_participant(user_id, community_id)
+
+    await message.answer(
+        f"✅ Task verified!\n\nYou’ve been added as a participant in *{community_id}*.",
+        parse_mode="Markdown"
+    )
