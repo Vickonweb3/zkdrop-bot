@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 
@@ -15,16 +15,13 @@ logging.basicConfig(level=logging.INFO)
 
 # ✅ Bot & Dispatcher
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(bot)
+dp = Dispatcher()
 
 # ✅ Register Handlers
 start_handler.register_start(dp)
 airdrop_notify.register_notify(dp)
 admin_handler.register_admin(dp)
 menu_handler.register_menu(dp)
-
-# ✅ Start background scheduler
-start_scheduler(bot)
 
 # ✅ Webhook settings
 WEBHOOK_HOST = "https://zkdrop-bot.onrender.com"  # Render link
@@ -38,9 +35,11 @@ async def handle(request):
 async def uptime_check(request):
     return web.Response(status=200, text="🟢 Uptime check OK")
 
+# ✅ Webhook + scheduler
 async def on_startup(app):
     await bot.set_webhook(WEBHOOK_URL)
     logging.info("🚀 Webhook set successfully.")
+    start_scheduler(bot)
 
 async def on_shutdown(app):
     await bot.delete_webhook()
@@ -49,7 +48,7 @@ async def on_shutdown(app):
 def main():
     app = web.Application()
 
-    # ✅ Add custom routes
+    # ✅ Custom routes
     app.router.add_get("/", handle)
     app.router.add_get("/uptime", uptime_check)
 
@@ -60,7 +59,7 @@ def main():
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
 
-    # ✅ Start app
+    # ✅ Launch app
     setup_application(app, dp, bot=bot)
     web.run_app(app, host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
