@@ -7,7 +7,10 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 from aiohttp import web
 
 from config.settings import BOT_TOKEN
-from handlers import start_handler, airdrop_notify, admin_handler, menu_handler
+from handlers.start_handler import router as start_router
+from handlers.airdrop_notify import router as airdrop_router
+from handlers.admin_handler import router as admin_router
+from handlers.menu_handler import router as menu_router
 from utils.scheduler import start_scheduler
 
 # ✅ Logging
@@ -17,25 +20,25 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# ✅ Register Handlers
-start_handler.register_start(dp)
-airdrop_notify.register_notify(dp)
-admin_handler.register_admin(dp)
-menu_handler.register_menu(dp)
+# ✅ Register routers (v3 style)
+dp.include_router(start_router)
+dp.include_router(airdrop_router)
+dp.include_router(admin_router)
+dp.include_router(menu_router)
 
 # ✅ Webhook settings
-WEBHOOK_HOST = "https://zkdrop-bot.onrender.com"  # Render link
+WEBHOOK_HOST = "https://zkdrop-bot.onrender.com"
 WEBHOOK_PATH = "/webhook"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
-# ✅ AIOHTTP routes
+# ✅ Routes
 async def handle(request):
     return web.Response(text="✅ ZK Drop Bot is live...")
 
 async def uptime_check(request):
     return web.Response(status=200, text="🟢 Uptime check OK")
 
-# ✅ Webhook + scheduler
+# ✅ Webhook + scheduler startup
 async def on_startup(app):
     await bot.set_webhook(WEBHOOK_URL)
     logging.info("🚀 Webhook set successfully.")
@@ -48,14 +51,14 @@ async def on_shutdown(app):
 def main():
     app = web.Application()
 
-    # ✅ Custom routes
+    # ✅ Add custom routes
     app.router.add_get("/", handle)
     app.router.add_get("/uptime", uptime_check)
 
     # ✅ Webhook dispatcher
     SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
 
-    # ✅ Setup startup & shutdown
+    # ✅ Setup startup & shutdown hooks
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
 
