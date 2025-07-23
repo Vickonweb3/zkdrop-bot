@@ -1,8 +1,10 @@
-from aiogram import types, Dispatcher
+from aiogram import types, Router
+from aiogram.exceptions import TelegramForbiddenError as BotBlocked
 from config.settings import ADMIN_ID
 from utils.scam_filter import is_scam
 from database.db import get_all_users
-from aiogram.exceptions import TelegramForbiddenError as BotBlocked  # ✅ aiogram v3 import
+
+router = Router()  # ✅ Use router instead of Dispatcher
 
 # ✨ Format airdrop message
 def format_airdrop(title, description, link, project):
@@ -17,6 +19,7 @@ def format_airdrop(title, description, link, project):
     )
 
 # 🪂 Admin-only /airdrop command
+@router.message(commands=["airdrop"])
 async def airdrop_command(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         await message.answer("⛔ You can't post airdrops.")
@@ -46,7 +49,7 @@ async def airdrop_command(message: types.Message):
 
         await message.answer(f"✅ Airdrop sent to {count} users.")
 
-    except Exception as e:
+    except Exception:
         await message.answer(
             "❌ Format error. Use:\n\n`/airdrop Project | Title | Description | Link`",
             parse_mode="Markdown"
@@ -67,7 +70,3 @@ async def send_airdrop_to_all(bot, title, description, link, project):
             )
         except BotBlocked:
             continue
-
-# 🔌 Register
-def register_notify(dp: Dispatcher):
-    dp.message.register(airdrop_command, commands=["airdrop"])
