@@ -1,4 +1,4 @@
-aiogram==2.25.1
+aiogram==3.4.1
 pymongo==4.5.0
 python-dotenv==1.0.0
 schedule==1.2.0
