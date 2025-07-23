@@ -1,13 +1,16 @@
-from aiogram import types, Dispatcher
+from aiogram import types, Router
+from aiogram.filters import Command
 from config.settings import ADMIN_ID
 from database.db import count_users, get_total_participants
-from aiogram.utils.markdown import bold
+
+router = Router()
 
 # 🛡️ Admin-only checker
 def is_admin(user_id):
     return str(user_id) == str(ADMIN_ID)
 
 # 📊 /stats command
+@router.message(Command("stats"))
 async def view_stats(message: types.Message):
     if not is_admin(message.from_user.id):
         await message.answer("⛔ Access denied.")
@@ -23,6 +26,7 @@ async def view_stats(message: types.Message):
     await message.answer(text, parse_mode="Markdown")
 
 # 📣 /broadcast command (placeholder to activate later)
+@router.message(Command("broadcast"))
 async def broadcast(message: types.Message):
     if not is_admin(message.from_user.id):
         await message.answer("⛔ Access denied.")
@@ -31,6 +35,7 @@ async def broadcast(message: types.Message):
     await message.answer("📣 Broadcast feature will be added in Phase 2.")
 
 # 🔁 /reload command
+@router.message(Command("reload"))
 async def reload_bot(message: types.Message):
     if not is_admin(message.from_user.id):
         await message.answer("⛔ Access denied.")
@@ -39,6 +44,7 @@ async def reload_bot(message: types.Message):
     await message.answer("🔄 Bot systems reloaded (simulated).")
 
 # 👥 /participants <community_id>
+@router.message(Command("participants"))
 async def participants_command(message: types.Message):
     if not is_admin(message.from_user.id):
         await message.answer("⛔ Access denied.")
@@ -57,9 +63,6 @@ async def participants_command(message: types.Message):
         parse_mode="Markdown"
     )
 
-# 📍 Register all admin commands
-def register_admin(dp: Dispatcher):
-    dp.register_message_handler(view_stats, commands=["stats"])
-    dp.register_message_handler(broadcast, commands=["broadcast"])
-    dp.register_message_handler(reload_bot, commands=["reload"])
-    dp.register_message_handler(participants_command, commands=["participants"])
+# 🔌 Register all admin commands
+def register_admin(dp):
+    dp.include_router(router)
