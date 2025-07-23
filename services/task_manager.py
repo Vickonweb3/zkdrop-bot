@@ -1,4 +1,4 @@
-# Legends 
+# services/task_manager.py
 
 from aiogram import types
 from database.db import add_participant
