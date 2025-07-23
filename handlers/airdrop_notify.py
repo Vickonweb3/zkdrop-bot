@@ -1,10 +1,11 @@
 from aiogram import types, Router
 from aiogram.exceptions import TelegramForbiddenError as BotBlocked
+from aiogram.filters import Command  # ✅ Required in v3.x
 from config.settings import ADMIN_ID
 from utils.scam_filter import is_scam
 from database.db import get_all_users
 
-router = Router()  # ✅ Use router instead of Dispatcher
+router = Router()  # ✅ Correct way in Aiogram v3
 
 # ✨ Format airdrop message
 def format_airdrop(title, description, link, project):
@@ -19,7 +20,7 @@ def format_airdrop(title, description, link, project):
     )
 
 # 🪂 Admin-only /airdrop command
-@router.message(commands=["airdrop"])
+@router.message(Command("airdrop"))  # ✅ v3-style command handler
 async def airdrop_command(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         await message.answer("⛔ You can't post airdrops.")
