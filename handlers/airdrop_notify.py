@@ -5,7 +5,7 @@ from config.settings import ADMIN_ID
 from utils.scam_filter import is_scam
 from database.db import get_all_users
 
-router = Router()  # ✅ Correct way in Aiogram v3
+router = Router()  # ✅ Aiogram v3 style
 
 # ✨ Format airdrop message
 def format_airdrop(title, description, link, project):
@@ -20,21 +20,27 @@ def format_airdrop(title, description, link, project):
     )
 
 # 🪂 Admin-only /airdrop command
-@router.message(Command("airdrop"))  # ✅ v3-style command handler
+@router.message(Command("airdrop"))
 async def airdrop_command(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         await message.answer("⛔ You can't post airdrops.")
         return
 
     try:
-        # Format: /airdrop Project | Title | Description | https://link.com
+        # Check for proper formatting
+        if "|" not in message.text or message.text.count("|") != 3:
+            raise ValueError("Incorrect format")
+
+        # Parse input
         data = message.text.split(" ", 1)[1]
         project, title, description, link = [x.strip() for x in data.split("|")]
 
+        # Scam check
         if is_scam(title + description + link + project):
             await message.answer("⚠️ This airdrop looks suspicious. Rejected.")
             return
 
+        # Format and send message
         msg = format_airdrop(title, description, link, project)
         users = await get_all_users()
 
@@ -56,7 +62,7 @@ async def airdrop_command(message: types.Message):
             parse_mode="Markdown"
         )
 
-# 🔁 Scheduled airdrop sender (used by scheduler)
+# 🔁 Scheduled airdrop sender (used by scheduler or webhook)
 async def send_airdrop_to_all(bot, title, description, link, project):
     if is_scam(title + description + link + project):
         return
