@@ -1,5 +1,6 @@
 import logging
 import os
+import traceback  # 🔍 Imported to trace silent shutdowns
 
 from aiogram import Bot, Dispatcher
 from aiogram.types import BotCommand
@@ -60,8 +61,10 @@ def main():
         start_scheduler(bot)
 
     async def on_shutdown(app):
+        # 🔍 Add stack trace to detect what's shutting down the app
+        traceback.print_stack()
         await bot.delete_webhook()
-        logging.info("💤 Webhook shutdown initiated.")
+        logging.warning("💤 Webhook shutdown initiated.")
 
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
