@@ -1,15 +1,34 @@
 import asyncio
 import logging
+import aiohttp  # Added for keep-alive ping
 
 from config.settings import TASK_INTERVAL_MINUTES, ADMIN_ID
 from database.db import get_unposted_airdrop, mark_airdrop_posted
 from utils.twitter_rating import rate_twitter_buzz
+from apscheduler.schedulers.asyncio import AsyncIOScheduler  # Added for keep-alive scheduler
 
 # ✅ Start the scheduler
 def start_scheduler(bot):
     logging.info("🚀 Starting background scheduler...")
     loop = asyncio.get_event_loop()
     loop.create_task(run_scheduler(bot))
+
+    # ✅ Keep-alive job
+    scheduler = AsyncIOScheduler()
+
+    async def keep_alive():
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get("https://zkdrop-bot.onrender.com/uptime") as resp:
+                    if resp.status == 200:
+                        logging.info("🟢 Keep-alive ping successful.")
+                    else:
+                        logging.warning(f"⚠️ Keep-alive ping failed with status: {resp.status}")
+        except Exception as e:
+            logging.error(f"❌ Keep-alive ping error: {e}")
+
+    scheduler.add_job(keep_alive, "interval", minutes=4)
+    scheduler.start()
 
 # 🔁 Background task loop
 async def run_scheduler(bot):
