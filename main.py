@@ -12,7 +12,6 @@ from handlers.airdrop_notify import router as airdrop_router
 from handlers.admin_handler import router as admin_router
 from handlers.menu_handler import router as menu_router
 from utils.scheduler import start_scheduler
-from database.db import init_db
 
 # ✅ Logging
 logging.basicConfig(level=logging.INFO)
