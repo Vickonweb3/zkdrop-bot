@@ -26,10 +26,13 @@ bot = Bot(token=TELEGRAM_TOKEN)
 def is_duplicate(link):
     return airdrops_col.find_one({"link": link}) is not None
 
-# ✅ Save new airdrop
+# ✅ Save new airdrop with proper fields
 def save_airdrop(title, link, platform, score):
     airdrops_col.insert_one({
         "title": title,
+        "project_name": title.replace(" Quests", ""),  # remove suffix
+        "project_link": link,
+        "twitter_url": "N/A",  # Default placeholder, required by scheduler/snipe
         "link": link,
         "platform": platform,
         "score": score,
@@ -85,7 +88,7 @@ def scrape_zealy_airdrops():
                 continue
 
             score = rate_airdrop(name)
-            save_airdrop(name, link, "Zealy", score)
+            save_airdrop(f"{name} Quests", link, "Zealy", score)
 
             new_drops.append({
                 "title": f"{name} Quests",
