@@ -1,47 +1,78 @@
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
+from pymongo import MongoClient
+from urllib.parse import urljoin
+from config.settings import MONGO_URI
 
+client = MongoClient(MONGO_URI, tls=True, tlsAllowInvalidCertificates=True)
+db = client["zkdrop_bot"]
+airdrops_collection = db["airdrops"]
+
+# ✅ Check if airdrop already exists
+def is_duplicate(link):
+    return airdrops_collection.find_one({"link": link}) is not None
+
+# ✅ Save new airdrop
+def save_airdrop(data):
+    data["timestamp"] = datetime.utcnow()
+    airdrops_collection.insert_one(data)
+
+# 🔧 Rate airdrop placeholder (we’ll improve later)
+def rate_airdrop(link, name):
+    return 0  # Placeholder score
+
+# 🚀 Main Zealy scraper
 def scrape_zealy_airdrops():
     url = "https://zealy.io/discover"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        "User-Agent": "Mozilla/5.0"
     }
 
     try:
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
-
         soup = BeautifulSoup(response.text, "html.parser")
 
-        # Check exact class by inspecting site — adjust if dynamic
-        airdrop_elements = soup.find_all("div", class_="ProjectCard_root__")
+        cards = soup.find_all("div", class_=lambda c: c and ("ProjectCard" in c or "card" in c.lower()))
+        if not cards:
+            print("⚠️ Zealy structure may have changed.")
+            return scrape_galxe_airdrops()  # fallback
 
-        if not airdrop_elements:
-            print("[⚠️ SCRAPER WARNING]: No airdrop elements found. Zealy layout may have changed.")
-            return []
+        new_drops = []
+        for card in cards[:10]:
+            title_tag = card.find("h3")
+            link_tag = card.find("a")
+            if not title_tag or not link_tag:
+                continue
 
-        scraped_data = []
-        for el in airdrop_elements[:5]:
-            name_tag = el.find("h3")
-            anchor = el.find("a")
+            name = title_tag.text.strip()
+            href = link_tag.get("href", "#")
+            link = urljoin(url, href)
 
-            name = name_tag.text.strip() if name_tag else "Unknown Project"
-            link = anchor["href"] if anchor and "href" in anchor.attrs else "#"
-            full_link = f"https://zealy.io{link}" if link.startswith("/") else link
+            if is_duplicate(link):
+                continue
 
-            scraped_data.append({
+            score = rate_airdrop(link, name)
+            airdrop = {
                 "title": f"{name} Quests",
-                "description": f"Join {name}'s airdrop quests on Zealy now!",
-                "link": full_link,
-                "project": name
-            })
+                "description": f"Join {name} on Zealy! Score: {score}/100",
+                "link": link,
+                "platform": "Zealy",
+                "project": name,
+                "score": score
+            }
 
-        return scraped_data
+            save_airdrop(airdrop)
+            new_drops.append(airdrop)
 
-    except requests.exceptions.RequestException as req_err:
-        print(f"[❌ SCRAPER ERROR - Request]: {req_err}")
+        return new_drops
+
     except Exception as e:
-        print(f"[❌ SCRAPER ERROR - General]: {e}")
+        print(f"❌ Zealy scrape error: {e}")
+        return scrape_galxe_airdrops()  # fallback
 
+# 🌌 Fallback placeholder
+def scrape_galxe_airdrops():
+    print("🔄 Switching to Galxe fallback...")
     return []
