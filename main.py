@@ -57,7 +57,6 @@ def main():
             BotCommand(command="menu", description="Open the main menu"),
         ])
 
-        init_db()
         start_scheduler(bot)
 
     async def on_shutdown(app):
