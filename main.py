@@ -12,7 +12,7 @@ from handlers.airdrop_notify import router as airdrop_router
 from handlers.admin_handler import router as admin_router
 from handlers.menu_handler import router as menu_router
 from utils.scheduler import start_scheduler
-from database.db import init_db  # ✅ NEW: Initialize DB
+from database.db import init_db
 
 # ✅ Logging
 logging.basicConfig(level=logging.INFO)
@@ -22,7 +22,7 @@ WEBHOOK_HOST = "https://zkdrop-bot.onrender.com"
 WEBHOOK_PATH = "/webhook"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
-# ✅ Routes
+# ✅ Health check routes
 async def handle(request):
     return web.Response(text="✅ ZK Drop Bot is live...")
 
@@ -52,17 +52,13 @@ def main():
         await bot.set_webhook(WEBHOOK_URL)
         logging.info("🚀 Webhook set successfully.")
 
-        # 🧠 Register commands for Telegram menu
+        # ✅ Public Telegram menu (keep it clean — no admin-only commands)
         await bot.set_my_commands([
             BotCommand(command="start", description="Start or restart the bot"),
             BotCommand(command="menu", description="Open the main menu"),
-            BotCommand(command="airdrop", description="Send a new airdrop (admin only)")
         ])
 
-        # 🧱 Initialize airdrop DB
         init_db()
-
-        # 🕒 Start the auto-scheduler
         start_scheduler(bot)
 
     async def on_shutdown(app):
