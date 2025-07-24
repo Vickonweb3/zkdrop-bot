@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import os
 
@@ -29,7 +28,7 @@ async def uptime_check(request):
     return web.Response(status=200, text="🟢 Uptime check OK")
 
 # ✅ Main entry
-async def main():
+def main():
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher()
 
@@ -39,7 +38,6 @@ async def main():
     dp.include_router(admin_router)
     dp.include_router(menu_router)
 
-    # ✅ App instance
     app = web.Application()
     app.router.add_get("/", handle)
     app.router.add_get("/uptime", uptime_check)
@@ -60,9 +58,8 @@ async def main():
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
 
-    # ✅ Final setup
     setup_application(app, dp, bot=bot)
     web.run_app(app, host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
