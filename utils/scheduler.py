@@ -1,15 +1,3 @@
-import asyncio
-import logging
-from utils.scraper import scrape_zealy_airdrops
-from handlers.airdrop_notify import send_airdrop_to_all
-from config.settings import TASK_INTERVAL_MINUTES
-
-# 🚀 Start scheduler loop
-def start_scheduler(bot):
-    logging.info("🚀 Starting background scheduler...")
-    loop = asyncio.get_event_loop()
-    loop.create_task(run_scheduler(bot))
-
 # 🔁 Background task loop
 async def run_scheduler(bot):
     while True:
@@ -17,7 +5,8 @@ async def run_scheduler(bot):
 
         try:
             # ⏰ Scrape new airdrops
-            new_airdrops = scrape_zealy_airdrops()
+            # new_airdrops = scrape_zealy_airdrops()
+            new_airdrops = []  # Disable scraper temporarily
         except Exception as scrape_err:
             logging.error(f"❌ Scraper Error: {scrape_err}")
             new_airdrops = []
