@@ -16,16 +16,6 @@ from utils.scheduler import start_scheduler
 # ✅ Logging
 logging.basicConfig(level=logging.INFO)
 
-# ✅ Bot & Dispatcher
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
-
-# ✅ Register routers (v3 style)
-dp.include_router(start_router)
-dp.include_router(airdrop_router)
-dp.include_router(admin_router)
-dp.include_router(menu_router)
-
 # ✅ Webhook settings
 WEBHOOK_HOST = "https://zkdrop-bot.onrender.com"
 WEBHOOK_PATH = "/webhook"
@@ -38,33 +28,41 @@ async def handle(request):
 async def uptime_check(request):
     return web.Response(status=200, text="🟢 Uptime check OK")
 
-# ✅ Webhook + scheduler startup
-async def on_startup(app):
-    await bot.set_webhook(WEBHOOK_URL)
-    logging.info("🚀 Webhook set successfully.")
-    start_scheduler(bot)
+# ✅ Main entry
+async def main():
+    bot = Bot(token=BOT_TOKEN)
+    dp = Dispatcher()
 
-async def on_shutdown(app):
-    await bot.delete_webhook()
-    logging.info("💤 Webhook shutdown initiated.")
+    # ✅ Register routers
+    dp.include_router(start_router)
+    dp.include_router(airdrop_router)
+    dp.include_router(admin_router)
+    dp.include_router(menu_router)
 
-def main():
+    # ✅ App instance
     app = web.Application()
-
-    # ✅ Add custom routes
     app.router.add_get("/", handle)
     app.router.add_get("/uptime", uptime_check)
 
     # ✅ Webhook dispatcher
     SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
 
-    # ✅ Setup startup & shutdown hooks
+    # ✅ Webhook & scheduler hooks
+    async def on_startup(app):
+        await bot.set_webhook(WEBHOOK_URL)
+        logging.info("🚀 Webhook set successfully.")
+        start_scheduler(bot)
+
+    async def on_shutdown(app):
+        await bot.delete_webhook()
+        logging.info("💤 Webhook shutdown initiated.")
+
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
 
-    # ✅ Launch app
+    # ✅ Final setup
     setup_application(app, dp, bot=bot)
     web.run_app(app, host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
