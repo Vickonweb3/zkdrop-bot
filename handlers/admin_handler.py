@@ -3,7 +3,6 @@ from aiogram.filters import Command
 from config.settings import ADMIN_ID
 from database.db import count_users, get_total_participants, get_unposted_airdrop, mark_airdrop_posted
 from utils.twitter_rating import rate_twitter_buzz
-from utils.send_to_community import send_airdrop_to_main_group
 
 router = Router()
 
@@ -65,7 +64,7 @@ async def participants_command(message: types.Message):
         parse_mode="Markdown"
     )
 
-# 🔫 /snipe command — get latest airdrop and send it out
+# 🔫 /snipe command — get latest airdrop and send it to admin
 @router.message(Command("snipe"))
 async def snipe_airdrop(message: types.Message):
     if not is_admin(message.from_user.id):
@@ -90,8 +89,8 @@ async def snipe_airdrop(message: types.Message):
 ⏳ Claim it before it's gone!
 """
 
-    # ✅ Send to community group
-    await send_airdrop_to_main_group(caption)
+    # ✅ Send it to admin instead of a group
+    await message.answer(caption, parse_mode="Markdown")
 
     # ✅ Mark as posted
     mark_airdrop_posted(airdrop["_id"])
