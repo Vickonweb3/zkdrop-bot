@@ -1,7 +1,9 @@
 from aiogram import types, Router
 from aiogram.filters import Command
 from config.settings import ADMIN_ID
-from database.db import count_users, get_total_participants
+from database.db import count_users, get_total_participants, get_unposted_airdrop, mark_airdrop_posted
+from utils.twitter_rating import rate_twitter_buzz
+from utils.send_to_community import send_airdrop_to_main_group
 
 router = Router()
 
@@ -16,7 +18,7 @@ async def view_stats(message: types.Message):
         await message.answer("⛔ Access denied.")
         return
 
-    user_count = count_users()  # No await needed
+    user_count = count_users()
     text = (
         "📊 *Bot Stats*\n\n"
         f"👥 Total Users: *{user_count}*\n"
@@ -62,6 +64,39 @@ async def participants_command(message: types.Message):
         f"👥 Total participants in *{community_id}*: *{total}*",
         parse_mode="Markdown"
     )
+
+# 🔫 /snipe command — get latest airdrop and send it out
+@router.message(Command("snipe"))
+async def snipe_airdrop(message: types.Message):
+    if not is_admin(message.from_user.id):
+        await message.answer("⛔ Access denied.")
+        return
+
+    airdrop = get_unposted_airdrop()
+    if not airdrop:
+        await message.answer("🕵️ No new airdrops found.")
+        return
+
+    # 🧠 Rate using Twitter
+    buzz = rate_twitter_buzz(airdrop["twitter_url"])
+    caption = f"""
+🚀 *New Airdrop Detected* 🚀
+
+🔹 *Project:* {airdrop['project_name']}
+🌐 *Website:* {airdrop['project_link']}
+🐦 *Twitter:* {airdrop['twitter_url']}
+🔥 *Buzz Rating:* {buzz}/10
+
+⏳ Claim it before it's gone!
+"""
+
+    # ✅ Send to community group
+    await send_airdrop_to_main_group(caption)
+
+    # ✅ Mark as posted
+    mark_airdrop_posted(airdrop["_id"])
+
+    await message.answer("✅ Airdrop sniped and shared successfully.", parse_mode="Markdown")
 
 # 🔌 Register all admin commands
 def register_admin(dp):
