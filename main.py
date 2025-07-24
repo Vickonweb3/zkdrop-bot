@@ -2,6 +2,7 @@ import logging
 import os
 
 from aiogram import Bot, Dispatcher
+from aiogram.types import BotCommand
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 
@@ -49,6 +50,14 @@ def main():
     async def on_startup(app):
         await bot.set_webhook(WEBHOOK_URL)
         logging.info("🚀 Webhook set successfully.")
+
+        # 🧠 Register commands for Telegram menu
+        await bot.set_my_commands([
+            BotCommand(command="start", description="Start or restart the bot"),
+            BotCommand(command="menu", description="Open the main menu"),
+            BotCommand(command="airdrop", description="Send a new airdrop (admin only)")
+        ])
+
         start_scheduler(bot)
 
     async def on_shutdown(app):
