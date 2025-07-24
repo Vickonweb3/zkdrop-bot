@@ -7,15 +7,17 @@ router = Router()
 # 🎛️ /menu command handler
 @router.message(F.text == "/menu")
 async def show_main_menu(message: types.Message):
-    kb = InlineKeyboardMarkup(row_width=2)
-
-    kb.add(
-        InlineKeyboardButton("📢 Airdrops", callback_data="airdrops"),
-        InlineKeyboardButton("📊 Stats", callback_data="stats"),
-    )
-    kb.add(
-        InlineKeyboardButton("📎 Follow Us on X", url=f"https://x.com/{OWNER_USERNAME.replace('@', '')}"),
-        InlineKeyboardButton("💬 Contact Dev", url="https://t.me/Vickonweb3"),
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="📢 Airdrops", callback_data="airdrops"),
+                InlineKeyboardButton(text="📊 Stats", callback_data="stats"),
+            ],
+            [
+                InlineKeyboardButton(text="📎 Follow Us on X", url=f"https://x.com/{OWNER_USERNAME.replace('@', '')}"),
+                InlineKeyboardButton(text="💬 Contact Dev", url="https://t.me/Vickonweb3"),
+            ]
+        ]
     )
 
     await message.answer("📍 *Main Menu* — choose an option:", reply_markup=kb, parse_mode="Markdown")
@@ -32,7 +34,3 @@ async def handle_menu_callback(call: types.CallbackQuery):
         )
     else:
         await call.message.answer("❌ Unknown option.")
-
-# 📌 Register router into dispatcher
-def register_menu(dp):
-    dp.include_router(router)
