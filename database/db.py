@@ -11,9 +11,12 @@ client = MongoClient(
 
 db = client["zkdrop_bot"]
 
-# Collections
+# ✅ Collections
 users_collection = db["users"]
 participants_collection = db["participants"]
+airdrops_collection = db["airdrops"]
+
+# ====================== 🧑 USER FUNCTIONS ======================
 
 # 🔘 Save user to database
 def save_user(user_id, username=None):
@@ -46,9 +49,11 @@ def user_exists(user_id):
 def get_all_user_ids():
     return [user["user_id"] for user in users_collection.find({}, {"user_id": 1})]
 
-# ✅ Aliases for compatibility with other handlers
+# ✅ Aliases for compatibility
 get_all_users = get_all_user_ids
 count_users = get_total_users
+
+# ====================== 👥 PARTICIPANT FUNCTIONS ======================
 
 # ✅ Add participant to a community
 def add_participant(user_id, community_id):
@@ -65,3 +70,19 @@ def add_participant(user_id, community_id):
 # 📊 Get total participants for a community
 def get_total_participants(community_id):
     return participants_collection.count_documents({"community_id": community_id})
+
+# ====================== 🪂 AIRDROP FUNCTIONS ======================
+
+# ✅ Save airdrop to DB (skip if duplicate)
+def save_airdrop(platform, title, link):
+    if not airdrops_collection.find_one({"link": link}):
+        airdrops_collection.insert_one({
+            "platform": platform,
+            "title": title,
+            "link": link,
+            "timestamp": datetime.utcnow()
+        })
+
+# 🔎 Get all sent airdrop links (to prevent duplicates)
+def get_all_airdrop_links():
+    return {doc["link"] for doc in airdrops_collection.find({}, {"link": 1})}
