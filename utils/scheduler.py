@@ -1,11 +1,13 @@
 import asyncio
 import logging
-import aiohttp  # Added for keep-alive ping
+import aiohttp
 
 from config.settings import TASK_INTERVAL_MINUTES, ADMIN_ID
 from database.db import get_unposted_airdrop, mark_airdrop_posted
 from utils.twitter_rating import rate_twitter_buzz
-from apscheduler.schedulers.asyncio import AsyncIOScheduler  # Added for keep-alive scheduler
+from utils.scraper import scrape_zealy_airdrops  # ✅ New import
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # ✅ Start the scheduler
 def start_scheduler(bot):
@@ -33,8 +35,18 @@ def start_scheduler(bot):
 # 🔁 Background task loop
 async def run_scheduler(bot):
     while True:
-        logging.info("🔄 Checking for new airdrops...")
+        logging.info("🔄 Running Zealy scraper...")
+        try:
+            new_drops = scrape_zealy_airdrops()  # ✅ Run the scraper
+            logging.info(f"🔍 Found {len(new_drops)} new airdrops from Zealy.")
 
+            if not new_drops:
+                logging.info("⚠️ No new drops scraped, checking DB for pending posts...")
+
+        except Exception as err:
+            logging.error(f"❌ Zealy scrape error: {err}")
+
+        # ✅ Check Mongo for unposted airdrops
         try:
             airdrop = get_unposted_airdrop()
         except Exception as db_err:
@@ -43,7 +55,7 @@ async def run_scheduler(bot):
 
         if airdrop:
             try:
-                # 🐦 Rate Twitter buzz (safely)
+                # 🐦 Twitter Buzz
                 try:
                     buzz_score = rate_twitter_buzz(airdrop.get("twitter_url", ""))
                     buzz_text = f"\n🔥 Twitter Buzz: {buzz_score}/10" if buzz_score else ""
@@ -51,7 +63,7 @@ async def run_scheduler(bot):
                     logging.warning(f"⚠️ Buzz rating failed: {buzz_err}")
                     buzz_text = ""
 
-                # 🧾 Prepare caption
+                # 🧾 Caption
                 text = (
                     f"🚀 *New Airdrop Detected!*\n\n"
                     f"🔹 *Project:* {airdrop.get('project_name', 'Unknown')}\n"
@@ -61,10 +73,7 @@ async def run_scheduler(bot):
                     f"🔗 *Join Airdrop:* {airdrop['link']}"
                 )
 
-                # 📤 Send to bot admin
                 await bot.send_message(chat_id=ADMIN_ID, text=text, parse_mode="Markdown")
-
-                # ✅ Mark as posted
                 mark_airdrop_posted(airdrop["_id"])
                 logging.info(f"✅ Airdrop posted: {airdrop['title']}")
 
@@ -72,6 +81,6 @@ async def run_scheduler(bot):
                 logging.error(f"❌ Error sending airdrop: {err}")
 
         else:
-            logging.info("⚠️ No new unposted airdrops found.")
+            logging.info("😴 Nothing to post for now.")
 
         await asyncio.sleep(TASK_INTERVAL_MINUTES * 60)
