@@ -2,7 +2,7 @@ import logging
 import os
 import traceback
 import asyncio
-import time  # ⏱️ Track webhook activity
+import time
 
 from aiogram import Bot, Dispatcher
 from aiogram.types import BotCommand
@@ -23,69 +23,64 @@ WEBHOOK_HOST = "https://zkdrop-bot.onrender.com"
 WEBHOOK_PATH = "/webhook"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
-last_webhook_hit = time.time()  # 🕒 Last time Telegram sent a webhook update
+last_webhook_hit = time.time()
 
-# ✅ Health check routes
+# ✅ Health check
 async def handle(request):
     return web.Response(text="✅ ZK Drop Bot is live...")
 
 async def uptime_check(request):
     return web.Response(status=200, text="🟢 Uptime check OK")
 
-# ✅ Keep Telegram alive every 1 minute — alert if Telegram dies
+# ✅ Ping Telegram every 1 min
 async def keep_alive_telegram(bot: Bot):
     while True:
         try:
             me = await bot.get_me()
-            logging.info(f"✅ Telegram bot alive as @{me.username}")
+            logging.info(f"✅ Bot alive as @{me.username}")
         except Exception as e:
-            logging.error(f"❌ Telegram API ping failed: {e}")
+            logging.error(f"❌ Telegram ping failed: {e}")
             try:
-                await bot.send_message(chat_id=ADMIN_ID, text=f"🚨 *Bot failed to ping Telegram API!*\n\n`{str(e)}`", parse_mode="Markdown")
-            except Exception as err:
-                logging.error(f"❌ Failed to send alert: {err}")
+                await bot.send_message(chat_id=ADMIN_ID, text=f"🚨 *Telegram API down!*\n`{str(e)}`", parse_mode="Markdown")
+            except: pass
         await asyncio.sleep(60)
 
-# 🔁 Reset webhook every 10 mins — alert on failure
+# 🔁 Reset webhook every 10 min
 async def periodic_webhook_reset(bot: Bot):
     while True:
         try:
             await bot.set_webhook(WEBHOOK_URL)
             logging.info("🔁 Webhook reset successful.")
         except Exception as e:
-            logging.error(f"❌ Failed to reset webhook: {e}")
+            logging.error(f"❌ Webhook reset failed: {e}")
             try:
-                await bot.send_message(chat_id=ADMIN_ID, text=f"🚨 *Webhook reset failed!*\n\n`{str(e)}`", parse_mode="Markdown")
-            except:
-                pass
+                await bot.send_message(chat_id=ADMIN_ID, text=f"🚨 *Webhook reset failed!*\n`{str(e)}`", parse_mode="Markdown")
+            except: pass
         await asyncio.sleep(600)
 
-# 🔍 Alert if no webhook hits in last 5 minutes
+# ⚠️ Alert if webhook silent for 5 min
 async def monitor_webhook_inactivity(bot: Bot):
     global last_webhook_hit
     while True:
         now = time.time()
-        if now - last_webhook_hit > 300:  # 5 minutes of silence
+        if now - last_webhook_hit > 300:
             try:
-                await bot.send_message(ADMIN_ID, "🚨 *No webhook updates received in the last 5 minutes!* Telegram may be silently down.", parse_mode="Markdown")
-                logging.warning("⚠️ No webhook activity detected in 5 minutes.")
-                last_webhook_hit = now  # Avoid spamming
-            except:
-                pass
+                await bot.send_message(ADMIN_ID, "🚨 *No webhook updates in 5 minutes!*", parse_mode="Markdown")
+                logging.warning("⚠️ Webhook inactive >5 mins.")
+                last_webhook_hit = now
+            except: pass
         await asyncio.sleep(60)
 
-# ✅ Main entry
+# ✅ Main
 def main():
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher()
 
-    # ✅ Register routers
     dp.include_router(start_router)
     dp.include_router(airdrop_router)
     dp.include_router(admin_router)
     dp.include_router(menu_router)
 
-    # ✅ Webhook dispatcher with activity tracker
     class CustomRequestHandler(SimpleRequestHandler):
         async def _handle(self, request: web.Request):
             global last_webhook_hit
@@ -95,18 +90,15 @@ def main():
     app = web.Application()
     app.router.add_get("/", handle)
     app.router.add_get("/uptime", uptime_check)
-
     CustomRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
 
     async def on_startup(app):
         await bot.set_webhook(WEBHOOK_URL)
         logging.info("🚀 Webhook set.")
-
         await bot.set_my_commands([
             BotCommand(command="start", description="Start or restart the bot"),
             BotCommand(command="menu", description="Open the main menu"),
         ])
-
         start_scheduler(bot)
 
         app['telegram_heartbeat'] = asyncio.create_task(keep_alive_telegram(bot))
@@ -120,8 +112,8 @@ def main():
 
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
-
     setup_application(app, dp, bot=bot)
+
     web.run_app(app, host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
 if __name__ == "__main__":
