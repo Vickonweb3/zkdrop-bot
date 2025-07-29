@@ -5,5 +5,5 @@ schedule==1.2.0
 httpx==0.24.1
 requests==2.31.0
 beautifulsoup4
-apscheduler==3.10.4
+apscheduler==3.6.3  # 👈 Fixed
 python-telegram-bot==13.15
