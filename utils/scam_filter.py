@@ -26,3 +26,5 @@ def is_scam(content: str) -> bool:
             return True
 
     return False
+#this bot deploynwnt eh
+basic_scam_check = is_scam
