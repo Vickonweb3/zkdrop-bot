@@ -13,8 +13,8 @@ SCAM_DOMAINS = [
     r"(metaamask|uniswop|airdropscam|airdrop\-free|claimnow|walletdrain)"
 ]
 
-# ✅ Basic scam check — returns True if risky
-def basic_scam_check(content: str) -> bool:
+# ✅ Main scam check function expected by the bot
+def is_scam(content: str) -> bool:
     text = content.lower()
 
     for keyword in SCAM_KEYWORDS:
