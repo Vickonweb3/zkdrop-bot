@@ -1,5 +1,5 @@
 from database.db import get_all_users
-from utils.scam_check import basic_scam_check
+from utils.scam_filter import basic_scam_check  # ✅ Fixed import
 from aiogram.exceptions import TelegramForbiddenError as BotBlocked
 
 # ✅ Format the airdrop message
