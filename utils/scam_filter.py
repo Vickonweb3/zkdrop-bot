@@ -9,11 +9,12 @@ SCAM_KEYWORDS = [
 
 # 🔎 Basic URL pattern matching
 SCAM_DOMAINS = [
-    r"(?:http|https)://(?:www\.)?(scam|fake|airdrop\-claim|wallet\-connect)\.\w+"
+    r"(?:http|https)://(?:www\.)?(scam|fake|airdrop\-claim|wallet\-connect)\.\w+",
+    r"(metaamask|uniswop|airdropscam|airdrop\-free|claimnow|walletdrain)"
 ]
 
-# ✅ Function to check if airdrop content looks suspicious
-def is_scam(content: str) -> bool:
+# ✅ Basic scam check — returns True if risky
+def basic_scam_check(content: str) -> bool:
     text = content.lower()
 
     for keyword in SCAM_KEYWORDS:
