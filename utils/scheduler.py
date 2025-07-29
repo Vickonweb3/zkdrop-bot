@@ -2,10 +2,11 @@ import asyncio
 import logging
 import aiohttp
 
-from config.settings import TASK_INTERVAL_MINUTES, ADMIN_ID
+from config.settings import TASK_INTERVAL_MINUTES
 from database.db import get_unposted_airdrop, mark_airdrop_posted
 from utils.twitter_rating import rate_twitter_buzz
-from utils.scraper import scrape_zealy_airdrops  # ✅ New import
+from utils.scraper import scrape_zealy_airdrops
+from utils.task.send_airdrop import send_airdrop_to_all  # ✅ New import
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -37,7 +38,7 @@ async def run_scheduler(bot):
     while True:
         logging.info("🔄 Running Zealy scraper...")
         try:
-            new_drops = scrape_zealy_airdrops()  # ✅ Run the scraper
+            new_drops = scrape_zealy_airdrops()
             logging.info(f"🔍 Found {len(new_drops)} new airdrops from Zealy.")
 
             if not new_drops:
@@ -63,19 +64,17 @@ async def run_scheduler(bot):
                     logging.warning(f"⚠️ Buzz rating failed: {buzz_err}")
                     buzz_text = ""
 
-                # 🧾 Caption
-                text = (
-                    f"🚀 *New Airdrop Detected!*\n\n"
-                    f"🔹 *Project:* {airdrop.get('project_name', 'Unknown')}\n"
-                    f"🌐 *Website:* {airdrop.get('project_link', 'N/A')}\n"
-                    f"🐦 *Twitter:* {airdrop.get('twitter_url', 'N/A')}"
-                    f"{buzz_text}\n"
-                    f"🔗 *Join Airdrop:* {airdrop['link']}"
+                # 🔁 Auto-send airdrop to all users
+                await send_airdrop_to_all(
+                    bot,
+                    title=airdrop.get("title", "Untitled"),
+                    description=f"{airdrop.get('project_link', '')}\n{airdrop.get('twitter_url', '')}{buzz_text}",
+                    link=airdrop["link"],
+                    project=airdrop.get("project_name", "Unknown")
                 )
 
-                await bot.send_message(chat_id=ADMIN_ID, text=text, parse_mode="Markdown")
                 mark_airdrop_posted(airdrop["_id"])
-                logging.info(f"✅ Airdrop posted: {airdrop['title']}")
+                logging.info(f"✅ Airdrop sent: {airdrop['title']}")
 
             except Exception as err:
                 logging.error(f"❌ Error sending airdrop: {err}")
