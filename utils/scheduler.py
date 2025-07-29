@@ -2,6 +2,8 @@ import asyncio
 import logging
 import aiohttp
 
+from pytz import utc  # ✅ Fixed timezone requirement for APScheduler
+
 from config.settings import TASK_INTERVAL_MINUTES
 from database.db import get_unposted_airdrop, mark_airdrop_posted
 from utils.twitter_rating import rate_twitter_buzz
@@ -17,7 +19,7 @@ def start_scheduler(bot):
     loop.create_task(run_scheduler(bot))
 
     # ✅ Keep-alive job
-    scheduler = AsyncIOScheduler()
+    scheduler = AsyncIOScheduler(timezone=utc)
 
     async def keep_alive():
         try:
