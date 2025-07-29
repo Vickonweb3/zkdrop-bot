@@ -60,7 +60,7 @@ def rate_airdrop(name):
 
 # 🕸️ Scrape Zealy's Discover Page
 def scrape_zealy_airdrops():
-    url = "https://zealy.io/discover"
+    url = "https://zealy.io/explore"
     headers = {"User-Agent": "Mozilla/5.0"}
 
     try:
