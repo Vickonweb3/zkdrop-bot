@@ -1,29 +1,26 @@
 import requests
 from retrying import retry
-import whois
 import sqlite3
 import logging
 import re
 from datetime import datetime
 import os
 
-# Load from .env (optional)
 from dotenv import load_dotenv
 load_dotenv()
 
-SAFE_BROWSING_KEY = os.getenv("SAFE_BROWSING_API")
-ETHERSCAN_KEY = os.getenv("ETHERSCAN_API")
+SAFE_BROWSING_KEY = os.getenv("SAFE_BROWSING_KEY")
+ETHERSCAN_API_KEY = os.getenv("ETHERSCAN_API_KEY")
+WHOIS_API_KEY = os.getenv("WHOIS_API_KEY")
+LUNAR_API_KEY = os.getenv("LUNAR_API_KEY")
 
-# 🚨 Setup logging
 logging.basicConfig(filename='zkdrop_scam.log', level=logging.ERROR)
 
-# ✅ Connect to SQLite (basic cache to avoid repeated checks)
 conn = sqlite3.connect('zkdrop.db')
 conn.execute('''CREATE TABLE IF NOT EXISTS scam_checks
                 (link TEXT, contract TEXT, score INTEGER, timestamp TEXT)''')
 cursor = conn.cursor()
 
-# 🔍 Google Safe Browsing or fallback regex
 @retry(stop_max_attempt_number=3, wait_fixed=3000)
 def check_safe_browsing(url: str) -> int:
     try:
@@ -47,54 +44,70 @@ def check_safe_browsing(url: str) -> int:
         scam_patterns = r"(metaamask|uniswop|claimnow|walletconnect|drainwallet)"
         return 20 if re.search(scam_patterns, url.lower()) else 0
 
-# 🔍 Check smart contract audit status and creation time
 @retry(stop_max_attempt_number=3, wait_fixed=3000)
 def check_contract(address: str) -> int:
     score = 0
     try:
-        # Get contract source
         r = requests.get(
-            f"https://api.etherscan.io/api?module=contract&action=getsourcecode&address={address}&apikey={ETHERSCAN_KEY}"
+            f"https://api.etherscan.io/api?module=contract&action=getsourcecode&address={address}&apikey={ETHERSCAN_API_KEY}"
         )
         data = r.json()["result"][0]
         if not data["SourceCode"]:
-            score += 15  # No audit / unverified
+            score += 15
 
-        # Get contract creation date
         r = requests.get(
-            f"https://api.etherscan.io/api?module=account&action=txlist&address={address}&startblock=0&endblock=99999999&page=1&offset=1&sort=asc&apikey={ETHERSCAN_KEY}"
+            f"https://api.etherscan.io/api?module=account&action=txlist&address={address}&startblock=0&endblock=99999999&page=1&offset=1&sort=asc&apikey={ETHERSCAN_API_KEY}"
         )
         txs = r.json().get("result", [])
         if txs:
             creation_time = int(txs[0]["timeStamp"])
             days_old = (datetime.now().timestamp() - creation_time) / (3600 * 24)
             if days_old < 30:
-                score += 10  # Less than a month old
-
+                score += 10
     except Exception as e:
         logging.error(f"Etherscan check failed: {e}")
-        score += 10  # fallback risk
+        score += 10
 
     return score
 
-# 🔍 DNS Age Check
 @retry(stop_max_attempt_number=3, wait_fixed=3000)
 def check_domain_age(url: str) -> int:
     try:
         domain = re.findall(r"https?://([^/]+)", url)[0]
-        info = whois.whois(domain)
-        created = info.creation_date
-        if isinstance(created, list):
-            created = created[0]
-        if (datetime.now() - created).days < 30:
-            return 20
+        response = requests.get(
+            f"https://www.whoisxmlapi.com/whoisserver/WhoisService?apiKey={WHOIS_API_KEY}&domainName={domain}&outputFormat=JSON"
+        )
+        data = response.json()
+        created = data["WhoisRecord"].get("createdDate")
+        if created:
+            created_date = datetime.strptime(created.split("T")[0], "%Y-%m-%d")
+            days_old = (datetime.now() - created_date).days
+            return 0 if days_old >= 30 else 20
+        return 10
+    except Exception as e:
+        logging.error(f"WHOIS API check failed: {e}")
+        return 10
+
+@retry(stop_max_attempt_number=3, wait_fixed=3000)
+def check_social_sentiment(token_symbol: str) -> int:
+    try:
+        response = requests.get(
+            f"https://api.lunarcrush.com/v2?data=assets&key={LUNAR_API_KEY}&symbol={token_symbol}"
+        )
+        data = response.json()
+        if not data.get("data"):
+            return 10
+        sentiment = data["data"][0].get("alt_rank", 100)
+        if sentiment > 80:
+            return 10
+        elif sentiment < 30:
+            return -5
         return 0
     except Exception as e:
-        logging.error(f"WHOIS check failed: {e}")
-        return 10  # fallback risk
+        logging.error(f"LunarCrush sentiment check failed: {e}")
+        return 5
 
-# ✅ Final scam score wrapper
-def analyze_airdrop(link: str, contract: str = None) -> int:
+def analyze_airdrop(link: str, contract: str = None, token_symbol: str = None) -> int:
     try:
         cached = cursor.execute("SELECT score FROM scam_checks WHERE link=? AND contract=?", (link, contract)).fetchone()
         if cached:
@@ -107,12 +120,13 @@ def analyze_airdrop(link: str, contract: str = None) -> int:
         if contract:
             score += check_contract(contract)
 
-        # Cache it
+        if token_symbol:
+            score += check_social_sentiment(token_symbol)
+
         cursor.execute("INSERT INTO scam_checks VALUES (?, ?, ?, ?)", (link, contract, score, datetime.now().isoformat()))
         conn.commit()
 
         return score
-
     except Exception as e:
         logging.error(f"Total scan failed: {e}")
-        return 99  # Assume high risk on failure
+        return 99
