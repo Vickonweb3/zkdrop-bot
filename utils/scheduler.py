@@ -5,7 +5,7 @@ import aiohttp
 from config.settings import TASK_INTERVAL_MINUTES
 from database.db import get_unposted_airdrop, mark_airdrop_posted
 from utils.twitter_rating import rate_twitter_buzz
-from utils.scraper import scrape_zealy_airdrops
+from utils.scrapers.zealy import scrape_zealy_airdrops  # ✅ Updated import
 from utils.task.send_airdrop import send_airdrop_to_all  # ✅ New import
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
