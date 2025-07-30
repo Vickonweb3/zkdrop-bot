@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
@@ -114,7 +115,13 @@ def scrape_galxe_airdrops():
     bot.send_message(VICK_CHAT_ID, "⚠️ Fallback to Galxe (not yet implemented).")
     return []
 
-# 🔘 Manual run
+# 🔁 Auto-scrape loop (every 60 seconds)
 if __name__ == "__main__":
-    drops = scrape_zealy_airdrops()
-    print(f"✅ {len(drops)} new airdrops scraped.")
+    print("⏳ Zealy airdrop monitor running every 60s...")
+    while True:
+        try:
+            drops = scrape_zealy_airdrops()
+            print(f"✅ {len(drops)} new airdrops scraped.")
+        except Exception as e:
+            print(f"❌ Error during scrape: {e}")
+        time.sleep(60)
