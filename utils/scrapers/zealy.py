@@ -58,7 +58,7 @@ def rate_airdrop(name):
 
     return min(score, 100)
 
-# 🕸️ Scrape Zealy's Discover Page
+# ✅ Scrape Zealy airdrops
 def scrape_zealy_airdrops():
     url = "https://zealy.io/explore"
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -68,49 +68,54 @@ def scrape_zealy_airdrops():
         res.raise_for_status()
         soup = BeautifulSoup(res.text, "html.parser")
 
-        cards = soup.find_all("div", class_=lambda c: c and ("ProjectCard_root__" in c or "card" in c.lower()))
+        # 🔁 Use flexible pattern that works even after layout changes
+        cards = soup.select('a[href^="/c/"]')
         if not cards:
-            bot.send_message(chat_id=VICK_CHAT_ID, text="⚠️ Zealy layout may have changed!")
-            return []
+            bot.send_message(VICK_CHAT_ID, "⚠️ Zealy layout changed. Trying fallback.")
+            return scrape_galxe_airdrops()
 
         new_drops = []
 
-        for card in cards[:10]:  # You can adjust this number later
-            h3 = card.find("h3")
-            anchor = card.find("a")
-            if not h3 or not anchor:
-                continue
+        for card in cards[:10]:
+            title_tag = card.find("h3")
+            link = urljoin(url, card.get("href"))
+            twitter_tag = card.find("a", href=lambda h: h and ("twitter.com" in h or "x.com" in h))
 
-            name = h3.text.strip()
-            link = urljoin(url, anchor.get("href", "#"))
+            if title_tag:
+                title = title_tag.text.strip()
+                twitter_url = twitter_tag["href"] if twitter_tag else "N/A"
 
-            if is_duplicate(link):
-                continue
+                if is_duplicate(link):
+                    continue
 
-            score = rate_airdrop(name)
-            save_airdrop(f"{name} Quests", link, "Zealy", score)
+                score = rate_airdrop(title)
+                save_airdrop(f"{title} Quests", link, "Zealy", score)
 
-            new_drops.append({
-                "title": f"{name} Quests",
-                "description": f"Join {name} on Zealy — Score: {score}/100",
-                "link": link,
-                "score": score
-            })
+                new_drops.append({
+                    "title": f"{title} Quests",
+                    "description": f"Join {title} on Zealy — Score: {score}/100",
+                    "link": link,
+                    "score": score
+                })
 
-            # Send alert to you
-            bot.send_message(
-                chat_id=VICK_CHAT_ID,
-                text=f"🚀 *{name} Airdrop*\nScore: *{score}/100*\n🔗 {link}",
-                parse_mode="Markdown"
-            )
+                # Send message to you
+                bot.send_message(
+                    chat_id=VICK_CHAT_ID,
+                    text=f"🚀 *{title} Airdrop*\nScore: *{score}/100*\n🔗 {link}",
+                    parse_mode="Markdown"
+                )
 
         return new_drops
 
     except Exception as e:
-        bot.send_message(chat_id=VICK_CHAT_ID, text=f"❌ Zealy scrape failed: {e}")
+        bot.send_message(VICK_CHAT_ID, f"❌ Zealy scrape failed: {e}")
         return []
 
-# 🔘 Manual run (testing only)
+# 🛟 Fallback to Galxe (basic placeholder version)
+def scrape_galxe_airdrops():
+    return []  # You can fill this in later with your actual Galxe logic
+
+# 🔘 Manual run
 if __name__ == "__main__":
     drops = scrape_zealy_airdrops()
     print(f"✅ {len(drops)} new airdrops scraped.")
