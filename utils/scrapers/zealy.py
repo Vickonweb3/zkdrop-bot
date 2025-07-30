@@ -64,7 +64,7 @@ def scrape_zealy_airdrops():
         res.raise_for_status()
         soup = BeautifulSoup(res.text, "html.parser")
 
-        cards = soup.select('a[href^="/c/"]')
+        cards = soup.select('div[class*="card"] a[href^="/c/"]')
         if not cards:
             bot.send_message(VICK_CHAT_ID, "⚠️ Zealy layout changed. Trying fallback...")
             return scrape_galxe_airdrops()
@@ -72,18 +72,19 @@ def scrape_zealy_airdrops():
         new_drops = []
         seen_links = set()
 
-        for card in cards[:10]:  # Adjust this number if needed
+        for card in cards[:10]:
             link = urljoin(url, card.get("href"))
             if link in seen_links or is_duplicate(link):
                 continue
             seen_links.add(link)
 
-            h3 = card.find("h3")
+            parent = card.find_parent("div")
+            h3 = parent.find("h3") if parent else None
             if not h3:
                 continue
             title = h3.text.strip()
 
-            twitter_tag = card.find("a", href=lambda h: h and ("twitter.com" in h or "x.com" in h))
+            twitter_tag = parent.find("a", href=lambda h: h and ("twitter.com" in h or "x.com" in h))
             twitter_url = twitter_tag["href"] if twitter_tag else "N/A"
 
             score = rate_airdrop(title)
@@ -110,7 +111,6 @@ def scrape_zealy_airdrops():
 
 # 🛟 Fallback to Galxe (placeholder)
 def scrape_galxe_airdrops():
-    # You can later add real scraping or API logic for Galxe
     bot.send_message(VICK_CHAT_ID, "⚠️ Fallback to Galxe (not yet implemented).")
     return []
 
