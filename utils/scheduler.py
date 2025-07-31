@@ -7,8 +7,8 @@ from pytz import utc  # ✅ Fixed timezone requirement for APScheduler
 from config.settings import TASK_INTERVAL_MINUTES
 from database.db import get_unposted_airdrop, mark_airdrop_posted
 from utils.twitter_rating import rate_twitter_buzz
-from utils.scrapers.zealy import scrape_zealy_airdrops  # ✅ Updated import
-from utils.task.send_airdrop import send_airdrop_to_all  # ✅ New import
+from utils.scrapers.zealy import scrape_zealy  # ✅ FIXED: match your zealy.py
+from utils.task.send_airdrop import send_airdrop_to_all
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -40,7 +40,7 @@ async def run_scheduler(bot):
     while True:
         logging.info("🔄 Running Zealy scraper...")
         try:
-            new_drops = scrape_zealy_airdrops()
+            new_drops = scrape_zealy()  # ✅ Fixed function call
             logging.info(f"🔍 Found {len(new_drops)} new airdrops from Zealy.")
 
             if not new_drops:
