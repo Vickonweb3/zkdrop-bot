@@ -7,7 +7,7 @@ from pymongo import MongoClient
 from telegram import Bot
 from urllib.parse import urljoin
 
-# ENV variables (Render-ready)
+# 🔒 ENV variables (Render-ready)
 MONGO_URI = os.getenv("MONGO_URI")
 TELEGRAM_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
@@ -15,17 +15,17 @@ TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN")
 SCAM_API_KEY = os.getenv("SAFE_BROWSING_KEY")
 SCAM_API_URL = "https://safebrowsing.googleapis.com/v4/threatMatches:find"
 
-# DB + Bot setup
+# 🔌 Setup
 client = MongoClient(MONGO_URI, tls=True, tlsAllowInvalidCertificates=True)
 db = client["zkdrop_bot"]
 airdrops_col = db["airdrops"]
 bot = Bot(token=TELEGRAM_TOKEN)
 
-# Check if already saved
+# 📦 Check if already saved
 def is_duplicate(link):
     return airdrops_col.find_one({"link": link}) is not None
 
-# Rate using Twitter Buzz
+# 🧠 Rate using Twitter Buzz
 def rate_project(name):
     try:
         url = f"https://api.twitter.com/2/tweets/search/recent?query={name}"
@@ -36,7 +36,7 @@ def rate_project(name):
     except:
         return 15
 
-# Scam Detection
+# 🛡 Scam Detection
 def is_scam(link, description):
     payload = {
         "client": {"clientId": "zkdrop-bot", "clientVersion": "1.0"},
@@ -51,12 +51,13 @@ def is_scam(link, description):
         resp = requests.post(f"{SCAM_API_URL}?key={SCAM_API_KEY}", json=payload, timeout=10)
         if resp.json().get("matches"):
             return True
+        # Basic keyword scan (backup)
         scam_words = ["airdrop soon", "free now", "double your", "claim fast", "airdropsoon", "urgent reward"]
         return any(word.lower() in description.lower() for word in scam_words)
     except:
         return False
 
-# Save to DB
+# 💾 Store in DB
 def save_airdrop(title, link, platform, score, twitter_url="N/A", xp="Unknown", description=""):
     airdrops_col.insert_one({
         "title": title,
@@ -71,7 +72,7 @@ def save_airdrop(title, link, platform, score, twitter_url="N/A", xp="Unknown", 
         "timestamp": datetime.utcnow()
     })
 
-# Scrape Zealy
+# 🔍 Scrape Zealy
 def scrape_zealy():
     url = "https://zealy.io/explore"
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -88,7 +89,7 @@ def scrape_zealy():
         new_drops = []
         seen = set()
 
-        for card in cards[:10]:
+        for card in cards[:15]:
             link = urljoin(url, card.get("href"))
             if link in seen or is_duplicate(link):
                 continue
@@ -100,7 +101,7 @@ def scrape_zealy():
                 continue
             title = h3.text.strip()
 
-            # XP
+            # Get XP
             xp_span = parent.find("span")
             xp = xp_span.text.strip().replace("XP", "") if xp_span else "0"
             try:
@@ -110,11 +111,11 @@ def scrape_zealy():
             if xp_int > 100:
                 continue
 
-            # Twitter
+            # Get Twitter
             twitter_tag = parent.find("a", href=lambda h: h and ("twitter.com" in h or "x.com" in h))
             twitter_url = twitter_tag["href"] if twitter_tag else "N/A"
 
-            # Description
+            # Get Description
             desc_tag = parent.find("p")
             description = desc_tag.text.strip() if desc_tag else "No description."
 
@@ -126,10 +127,11 @@ def scrape_zealy():
 
             save_airdrop(f"{title} Quests", link, "Zealy", score, twitter_url, xp, description)
 
-            rank_note = "🔥 *Top Rank Project!*" if score >= 100 else ""
+            # 📬 Telegram message
+            rank_tag = "🔥 *Top Rank!*" if score >= 100 else ""
             message = (
                 f"🚀 *{title}*\n"
-                f"{rank_note}\n\n"
+                f"{rank_tag}\n\n"
                 f"📖 *What is it?*\n_{description}_\n\n"
                 f"🎯 *XP:* {xp}\n"
                 f"📊 *Buzz Score:* {score}/100\n"
@@ -146,7 +148,7 @@ def scrape_zealy():
         bot.send_message(ADMIN_ID, f"❌ Error scraping Zealy: {e}")
         return []
 
-# Auto-run every 60s
+# 🔁 Auto-run every 60s
 if __name__ == "__main__":
     print("⏳ Zealy monitor running...")
     while True:
