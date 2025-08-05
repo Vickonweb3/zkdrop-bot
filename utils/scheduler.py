@@ -2,15 +2,15 @@ import asyncio
 import logging
 import aiohttp
 
-from pytz import utc  # ✅ Fixed timezone requirement for APScheduler
+from pytz import utc
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config.settings import TASK_INTERVAL_MINUTES
 from database.db import get_unposted_airdrop, mark_airdrop_posted
 from utils.twitter_rating import rate_twitter_buzz
-from utils.scrapers.zealy import scrape_zealy  # ✅ FIXED: match your zealy.py
+from utils.scam_analyzer import analyze_airdrop
 from utils.task.send_airdrop import send_airdrop_to_all
-
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from utils.scrapers.zealy import scrape_zealy  # Make sure this exists and is working
 
 # ✅ Start the scheduler
 def start_scheduler(bot):
@@ -39,13 +39,10 @@ def start_scheduler(bot):
 async def run_scheduler(bot):
     while True:
         logging.info("🔄 Running Zealy scraper...")
+
         try:
-            new_drops = scrape_zealy()  # ✅ Fixed function call
+            new_drops = scrape_zealy()
             logging.info(f"🔍 Found {len(new_drops)} new airdrops from Zealy.")
-
-            if not new_drops:
-                logging.info("⚠️ No new drops scraped, checking DB for pending posts...")
-
         except Exception as err:
             logging.error(f"❌ Zealy scrape error: {err}")
 
@@ -58,6 +55,17 @@ async def run_scheduler(bot):
 
         if airdrop:
             try:
+                # 🛡️ Scam analysis
+                scam_score = analyze_airdrop(
+                    airdrop["link"],
+                    airdrop.get("contract_address"),
+                    airdrop.get("token_symbol")
+                )
+
+                if scam_score >= 30:
+                    logging.warning(f"🚨 Scam score too high ({scam_score}) for {airdrop['title']}. Skipping.")
+                    continue
+
                 # 🐦 Twitter Buzz
                 try:
                     buzz_score = rate_twitter_buzz(airdrop.get("twitter_url", ""))
@@ -66,7 +74,7 @@ async def run_scheduler(bot):
                     logging.warning(f"⚠️ Buzz rating failed: {buzz_err}")
                     buzz_text = ""
 
-                # 🔁 Auto-send airdrop to all users
+                # 📤 Auto-send airdrop
                 await send_airdrop_to_all(
                     bot,
                     title=airdrop.get("title", "Untitled"),
@@ -80,7 +88,6 @@ async def run_scheduler(bot):
 
             except Exception as err:
                 logging.error(f"❌ Error sending airdrop: {err}")
-
         else:
             logging.info("😴 Nothing to post for now.")
 
