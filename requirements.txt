@@ -7,3 +7,4 @@ requests==2.31.0
 beautifulsoup4
 apscheduler==3.6.3  # 👈 Fixed
 python-telegram-bot==13.15
+retrying==1.3.4
