@@ -5,7 +5,7 @@ from urllib.parse import urljoin
 from datetime import datetime
 from pymongo import MongoClient
 
-from utils.twitter_rating import rate_project
+from utils.twitter_rating import rate_twitter_buzz
 from utils.scam_analyzer import is_scam
 
 MONGO_URI = os.getenv("MONGO_URI")
