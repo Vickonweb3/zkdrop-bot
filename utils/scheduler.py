@@ -8,9 +8,9 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from config.settings import TASK_INTERVAL_MINUTES
 from database.db import get_unposted_airdrop, mark_airdrop_posted
 from utils.twitter_rating import rate_twitter_buzz
-from utils.scam_analyzer import analyze_airdrop
+from utils.scram_analyzer import analyze_airdrop
+from utils.scrapers.zealy import scrape_zealy
 from utils.task.send_airdrop import send_airdrop_to_all
-from utils.scrapers.zealy import scrape_zealy  # Make sure this exists and is working
 
 # ✅ Start the scheduler
 def start_scheduler(bot):
@@ -18,9 +18,9 @@ def start_scheduler(bot):
     loop = asyncio.get_event_loop()
     loop.create_task(run_scheduler(bot))
 
-    # ✅ Keep-alive job
     scheduler = AsyncIOScheduler(timezone=utc)
 
+    # ✅ Keep-alive ping every 4 minutes
     async def keep_alive():
         try:
             async with aiohttp.ClientSession() as session:
@@ -35,18 +35,17 @@ def start_scheduler(bot):
     scheduler.add_job(keep_alive, "interval", minutes=4)
     scheduler.start()
 
-# 🔁 Background task loop
+# 🔁 Background Zealy task
 async def run_scheduler(bot):
     while True:
         logging.info("🔄 Running Zealy scraper...")
-
         try:
             new_drops = scrape_zealy()
-            logging.info(f"🔍 Found {len(new_drops)} new airdrops from Zealy.")
+            logging.info(f"🆕 Found {len(new_drops)} new Zealy drops.")
         except Exception as err:
             logging.error(f"❌ Zealy scrape error: {err}")
 
-        # ✅ Check Mongo for unposted airdrops
+        # ✅ Check for unposted drops
         try:
             airdrop = get_unposted_airdrop()
         except Exception as db_err:
@@ -55,15 +54,16 @@ async def run_scheduler(bot):
 
         if airdrop:
             try:
-                # 🛡️ Scam analysis
+                # ⚠️ Scam Detection
                 scam_score = analyze_airdrop(
                     airdrop["link"],
                     airdrop.get("contract_address"),
                     airdrop.get("token_symbol")
                 )
-
                 if scam_score >= 30:
-                    logging.warning(f"🚨 Scam score too high ({scam_score}) for {airdrop['title']}. Skipping.")
+                    logging.warning(f"🚨 Scam score {scam_score} for '{airdrop['title']}' — skipped.")
+                    mark_airdrop_posted(airdrop["_id"])
+                    await asyncio.sleep(TASK_INTERVAL_MINUTES * 60)
                     continue
 
                 # 🐦 Twitter Buzz
@@ -71,10 +71,10 @@ async def run_scheduler(bot):
                     buzz_score = rate_twitter_buzz(airdrop.get("twitter_url", ""))
                     buzz_text = f"\n🔥 Twitter Buzz: {buzz_score}/10" if buzz_score else ""
                 except Exception as buzz_err:
-                    logging.warning(f"⚠️ Buzz rating failed: {buzz_err}")
+                    logging.warning(f"⚠️ Twitter buzz rating failed: {buzz_err}")
                     buzz_text = ""
 
-                # 📤 Auto-send airdrop
+                # 🚀 Send drop
                 await send_airdrop_to_all(
                     bot,
                     title=airdrop.get("title", "Untitled"),
@@ -82,13 +82,12 @@ async def run_scheduler(bot):
                     link=airdrop["link"],
                     project=airdrop.get("project_name", "Unknown")
                 )
-
                 mark_airdrop_posted(airdrop["_id"])
-                logging.info(f"✅ Airdrop sent: {airdrop['title']}")
+                logging.info(f"✅ Sent airdrop: {airdrop['title']}")
 
             except Exception as err:
                 logging.error(f"❌ Error sending airdrop: {err}")
         else:
-            logging.info("😴 Nothing to post for now.")
+            logging.info("😴 No airdrops to post right now.")
 
         await asyncio.sleep(TASK_INTERVAL_MINUTES * 60)
