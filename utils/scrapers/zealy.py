@@ -6,7 +6,7 @@ from datetime import datetime
 from pymongo import MongoClient
 
 from utils.twitter_rating import rate_twitter_buzz
-from utils.scam_analyzer import is_scam
+from utils.scam_analyzer import analyze_airdrop
 
 MONGO_URI = os.getenv("MONGO_URI")
 client = MongoClient(MONGO_URI, tls=True, tlsAllowInvalidCertificates=True)
