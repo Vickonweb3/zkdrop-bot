@@ -442,13 +442,15 @@ def send_daily_trending(limit=12):
 
 # ---------------------- Runner / Scheduler ----------------------
 def run_loop(poll_interval=POLL_INTERVAL, daily_hour=DAILY_HOUR_UTC):
+    """Main loop: runs scrape every poll_interval seconds and sends daily trending at daily_hour UTC."""
     logging.info("Zealy scraper started. Poll interval: %s seconds. Daily hour (UTC): %s", poll_interval, daily_hour)
-    last_daily_date = None
+    last_daily_date = None  # track last date we ran daily to avoid repeats
     try:
         while True:
             try:
                 run_scrape_once(limit=25, sort="TRENDING")
                 
+                # FIXED INDENTATION HERE
                 now = datetime.utcnow()
                 today_date = now.date()
                 if now.hour == daily_hour and (last_daily_date != today_date):
@@ -461,9 +463,10 @@ def run_loop(poll_interval=POLL_INTERVAL, daily_hour=DAILY_HOUR_UTC):
             except Exception as e:
                 logging.exception("Main scrape error")
                 if ADMIN_ID:
-                    send_telegram_message(ADMIN_ID, f"[❌ Zealy main error] {str(e)[:200]}")
+                    send_telegram_message(ADMIN_ID, f"[❌ Zealy main error] {e}")
 
             time.sleep(poll_interval)
 
+# THIS SHOULD BE AT ROOT LEVEL (NO INDENTATION)
 if __name__ == "__main__":
     run_loop()
