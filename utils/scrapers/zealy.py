@@ -508,7 +508,8 @@ def run_loop(poll_interval=POLL_INTERVAL, daily_hour=DAILY_HOUR_UTC):
             now = datetime.utcnow()
             today_date = now.date()
             if now.hour == daily_hour and (last_daily_date != today_date):
-                try:
-                    send_daily_trending(limit=12)
-                    last_daily_date = today_date
-except 
+    try:
+        send_daily_trending(limit=12)
+        last_daily_date = today_date
+    except Exception as e:
+        print(f"Error sending daily trending: {e}")
