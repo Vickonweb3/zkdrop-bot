@@ -9,7 +9,7 @@ from config.settings import TASK_INTERVAL_MINUTES
 from database.db import get_unposted_airdrop, mark_airdrop_posted
 from utils.twitter_rating import rate_twitter_buzz
 from utils.scam_analyzer import analyze_airdrop
-from utils.scrapers.zealy import scrape_zealy
+from utils.scrapers.zealy import run_loop as scrape_zealy
 from utils.task.send_airdrop import send_airdrop_to_all
 
 
