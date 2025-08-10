@@ -47,7 +47,7 @@ async def run_scheduler(bot):
             logging.info(f"🔍 Found {len(new_drops)} new airdrops from Zealy.")
         except Exception as err:
             logging.error(f"❌ Zealy scrape error: {err}")
-            new_drops = []
+            new_drops = await run_loop()
 
         # ✅ Try to get unposted airdrop from MongoDB
         try:
