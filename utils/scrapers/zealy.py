@@ -1,12 +1,11 @@
-# main/utils/scrapers/zealy.py
 """
-Zealy scraper for zkDrop Bot (FULLY UPDATED VERSION)
+Zealy scraper for zkDrop Bot (PLAYWRIGHT EDITION)
 All original functionality + critical upgrades:
 1. Secure MongoDB TLS
 2. Zealy rate limiting
 3. Random user-agents
-4. Fixed run_loop indentation
-5. Connection timeouts
+4. Playwright headless browser
+5. Advanced anti-detection
 """
 
 import os
@@ -15,10 +14,12 @@ import time
 import math
 import random
 import logging
+import asyncio
 import requests
 from datetime import datetime, timedelta
 from pymongo import MongoClient
 from urllib.parse import urljoin
+from playwright.async_api import async_playwright
 
 # Try to import dotenv if available (useful for local testing)
 try:
@@ -28,7 +29,7 @@ except Exception:
     pass
 
 # ---------------------- Configuration & Environment ----------------------
-GRAPHQL_URL = "https://api.zealy.io/graphql"
+BASE_URL = "https://zealy.io"
 HEADERS = {
     "content-type": "application/json",
     "user-agent": random.choice([
@@ -101,59 +102,9 @@ except Exception:
     def rate_twitter_buzz(handle_or_url):
         return 50
 
-# ---------------------- GraphQL Queries ----------------------
-EXPLORE_QUERY = """
-query ExploreCommunities($filter: String, $sort: Sort, $limit: Int, $offset: Int) {
-  exploreCommunities(filter: $filter, sort: $sort, limit: $limit, offset: $offset) {
-    name
-    slug
-    logo
-    twitter
-    createdAt
-  }
-}
-"""
-
-COMMUNITY_QUESTS_QUERY = """
-query CommunityPage($slug: String!, $limit: Int) {
-  community(slug: $slug) {
-    name
-    slug
-    quests(limit: $limit) {
-      title
-      xp
-      description
-      claimLimit
-      endsAt
-    }
-  }
-}
-"""
-
 # ---------------------- Utility Functions ----------------------
-def post_graphql(query, variables=None, timeout=12):
-    """Send GraphQL POST with rate limiting."""
-    payload = {"query": query}
-    if variables is not None:
-        payload["variables"] = variables
-    
-    time.sleep(random.uniform(1.5, 3.5))  # Anti-ban delay
-    
-    try:
-        resp = requests.post(
-            GRAPHQL_URL,
-            headers=HEADERS,
-            json=payload,
-            timeout=timeout
-        )
-        resp.raise_for_status()
-        return resp.json()
-    except Exception as e:
-        logging.error(f"[GraphQL] request failed: {str(e)[:100]}...")
-        return None
-
 def build_zealy_url(slug):
-    return f"https://zealy.io/c/{slug}"
+    return f"{BASE_URL}/c/{slug}"
 
 def now_utc():
     return datetime.utcnow()
@@ -251,51 +202,124 @@ def broadcast_to_all_users(text, skip_admin=False):
     logging.info(f"Broadcast sent to {sent} users.")
     return sent
 
-# ---------------------- Fetchers ----------------------
-def fetch_explore_communities(limit=30, offset=0, sort="TRENDING"):
-    variables = {"filter": "", "sort": sort, "limit": limit, "offset": offset}
-    data = post_graphql(EXPLORE_QUERY, variables)
-    if not data:
-        return []
-    try:
-        communities = data.get("data", {}).get("exploreCommunities", []) or []
-        return [{
-            "title": c.get("name"),
-            "slug": c.get("slug"),
-            "url": build_zealy_url(c.get("slug")),
-            "logo": c.get("logo"),
-            "twitter": c.get("twitter"),
-            "created_at": c.get("createdAt")
-        } for c in communities]
-    except Exception as e:
-        logging.exception("Error parsing exploreCommunities response")
-        return []
-
-def fetch_community_quests_xp(slug, limit=12):
-    variables = {"slug": slug, "limit": limit}
-    data = post_graphql(COMMUNITY_QUESTS_QUERY, variables)
-    if not data:
-        return None, None
-    try:
-        community = data.get("data", {}).get("community")
-        if not community:
-            return None, None
-        quests = community.get("quests") or []
-        xp_values = []
-        sample_desc = None
-        for q in quests:
-            if q.get("xp"):
+# ---------------------- Playwright Scrapers ----------------------
+async def fetch_explore_communities(limit=30):
+    results = []
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage"
+            ]
+        )
+        context = await browser.new_context(
+            user_agent=random.choice([
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+                "Mozilla/5.0 (X11; Linux x86_64)"
+            ]),
+            viewport={"width": 1280, "height": 1024}
+        )
+        
+        try:
+            page = await context.new_page()
+            await page.goto(f"{BASE_URL}/explore", wait_until="networkidle", timeout=30000)
+            
+            # Wait for communities to load
+            await page.wait_for_selector(".community-card", timeout=15000)
+            
+            # Scroll to load more (if needed)
+            for _ in range(2):
+                await page.evaluate("window.scrollBy(0, window.innerHeight)")
+                await asyncio.sleep(1)
+            
+            # Extract community data
+            cards = await page.query_selector_all(".community-card")
+            for card in cards[:limit]:
                 try:
-                    xp_values.append(float(str(q["xp"]).replace(",", "")))
+                    title = await card.get_attribute("data-name")
+                    slug = await card.get_attribute("data-slug")
+                    
+                    logo = await card.query_selector("img")
+                    logo_url = await logo.get_attribute("src") if logo else None
+                    
+                    twitter_elem = await card.query_selector(".twitter-link")
+                    twitter = await twitter_elem.get_attribute("href") if twitter_elem else None
+                    
+                    results.append({
+                        "title": title,
+                        "slug": slug,
+                        "url": build_zealy_url(slug),
+                        "logo": logo_url,
+                        "twitter": twitter
+                    })
+                except Exception as e:
+                    logging.warning(f"Error parsing card: {e}")
+                    continue
+            
+            return results[:limit]
+        finally:
+            await browser.close()
+
+async def fetch_community_quests(slug, limit=12):
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage"
+            ]
+        )
+        context = await browser.new_context(
+            user_agent=random.choice([
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+                "Mozilla/5.0 (X11; Linux x86_64)"
+            ])
+        )
+        
+        try:
+            page = await context.new_page()
+            url = f"{BASE_URL}/c/{slug}/questboard"
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            
+            # Wait for quests to load
+            try:
+                await page.wait_for_selector(".quest-item", timeout=15000)
+            except:
+                logging.warning(f"No quests found for {slug}")
+                return None
+            
+            # Extract quest data
+            quests = []
+            items = await page.query_selector_all(".quest-item")
+            for item in items[:limit]:
+                try:
+                    title_elem = await item.query_selector(".quest-title")
+                    title = await title_elem.text_content() if title_elem else None
+                    
+                    xp_elem = await item.query_selector(".quest-xp")
+                    xp = await xp_elem.text_content() if xp_elem else None
+                    
+                    desc_elem = await item.query_selector(".quest-description")
+                    description = await desc_elem.text_content() if desc_elem else None
+                    
+                    quests.append({
+                        "title": title.strip() if title else None,
+                        "xp": xp.strip() if xp else None,
+                        "description": description.strip() if description else None
+                    })
                 except:
-                    pass
-            if not sample_desc:
-                sample_desc = (q.get("title") or q.get("description") or "")
-        max_xp = int(max(xp_values)) if xp_values else None
-        return max_xp, sample_desc
-    except Exception as e:
-        logging.exception("Error parsing community quests")
-        return None, None
+                    continue
+            
+            return quests
+        finally:
+            await browser.close()
 
 # ---------------------- Processing & Sending ----------------------
 def compose_public_message(title, url, xp, twitter_url, scam_summary):
@@ -325,7 +349,7 @@ def compose_admin_message(title, url, xp, twitter_url, scam_summary, rank):
         f"*Analyzer details:* `{details_json}`\n"
     )
 
-def process_and_send(community):
+async def process_and_send(community):
     title = community.get("title") or "Unknown Project"
     slug = community.get("slug")
     url = community.get("url") or build_zealy_url(slug)
@@ -334,16 +358,33 @@ def process_and_send(community):
     if is_duplicate(url) or was_sent_recently(url, hours=24):
         return None
 
-    xp_value, sample_desc = fetch_community_quests_xp(slug)
-    xp_display = xp_value if xp_value is not None else "Unknown"
-    should_send_now = xp_value is not None and 100 < xp_value < 1000
+    quests = await fetch_community_quests(slug)
+    if not quests:
+        return None
+
+    # Calculate max XP and get sample description
+    xp_values = []
+    sample_desc = None
+    for q in quests:
+        try:
+            if q.get("xp"):
+                xp = int(''.join(filter(str.isdigit, q["xp"])))
+                xp_values.append(xp)
+        except:
+            pass
+        if not sample_desc and q.get("description"):
+            sample_desc = q["description"]
+
+    max_xp = max(xp_values) if xp_values else None
+    xp_display = max_xp if max_xp is not None else "Unknown"
+    should_send_now = max_xp is not None and 100 < max_xp < 1000
 
     scam_summary = run_scam_checks(title, sample_desc or "", url)
     twitter_score = rate_twitter_buzz(twitter) if twitter else None
     rank_score = compute_rank_score(
         scam_summary.get("scam_score", 50),
         twitter_score,
-        xp_value or 0
+        max_xp or 0
     )
 
     full_title = f"{title} Quests"
@@ -365,16 +406,24 @@ def process_and_send(community):
     return {
         "title": full_title,
         "url": url,
-        "xp": xp_value,
+        "xp": max_xp,
         "rank": rank_score,
         "scam": scam_summary,
         "sent_public": should_send_now
     }
 
-# ---------------------- One-pass Scrape ----------------------
-def run_scrape_once(limit=25, sort="TRENDING"):
+# ---------------------- Main Scraping Functions ----------------------
+async def run_scrape_once(limit=25):
     logging.info("Running Zealy scrape pass...")
-    communities = fetch_explore_communities(limit=limit, sort=sort)
+    try:
+        communities = await fetch_explore_communities(limit=limit)
+    except Exception as e:
+        msg = f"⚠️ Zealy scrape failed: {str(e)[:200]}"
+        logging.error(msg)
+        if ADMIN_ID:
+            send_telegram_message(ADMIN_ID, msg)
+        return []
+
     if not communities:
         msg = f"⚠️ Zealy scrape returned no communities at {datetime.utcnow().isoformat()} UTC."
         logging.warning(msg)
@@ -390,7 +439,7 @@ def run_scrape_once(limit=25, sort="TRENDING"):
             continue
         seen_slugs.add(slug)
         try:
-            result = process_and_send(c)
+            result = await process_and_send(c)
             if result:
                 processed.append(result)
         except Exception as e:
@@ -401,10 +450,16 @@ def run_scrape_once(limit=25, sort="TRENDING"):
     logging.info(f"Scrape pass finished. Processed {len(processed)} items.")
     return processed
 
-# ---------------------- Daily Trending ----------------------
-def send_daily_trending(limit=12):
+async def send_daily_trending(limit=12):
     logging.info("Preparing daily trending leaderboard...")
-    communities = fetch_explore_communities(limit=limit, sort="TRENDING")
+    try:
+        communities = await fetch_explore_communities(limit=limit)
+    except Exception as e:
+        logging.error(f"Failed to fetch communities for daily report: {e}")
+        if ADMIN_ID:
+            send_telegram_message(ADMIN_ID, "⚠️ Daily trending: fetch failed.")
+        return False
+
     if not communities:
         logging.warning("No trending communities found for daily report.")
         if ADMIN_ID:
@@ -414,7 +469,24 @@ def send_daily_trending(limit=12):
     scored = []
     for c in communities:
         slug = c.get("slug")
-        xp_value, sample_desc = fetch_community_quests_xp(slug, limit=8)
+        quests = await fetch_community_quests(slug, limit=8)
+        if not quests:
+            continue
+            
+        # Calculate max XP and get sample description
+        xp_values = []
+        sample_desc = None
+        for q in quests:
+            try:
+                if q.get("xp"):
+                    xp = int(''.join(filter(str.isdigit, q["xp"])))
+                    xp_values.append(xp)
+            except:
+                pass
+            if not sample_desc and q.get("description"):
+                sample_desc = q["description"]
+
+        xp_value = max(xp_values) if xp_values else 0
         scam_summary = run_scam_checks(c.get("title"), sample_desc or "", c.get("url"))
         twitter_score = rate_twitter_buzz(c["twitter"]) if c.get("twitter") else None
         scored.append((
@@ -441,7 +513,7 @@ def send_daily_trending(limit=12):
     return False
 
 # ---------------------- Runner / Scheduler ----------------------
-def run_loop(poll_interval=POLL_INTERVAL, daily_hour=DAILY_HOUR_UTC):
+async def run_loop(poll_interval=POLL_INTERVAL, daily_hour=DAILY_HOUR_UTC):
     """Main loop: runs scrape every poll_interval seconds and sends daily trending at daily_hour UTC."""
     logging.info("Zealy scraper started. Poll interval: %s seconds. Daily hour (UTC): %s", poll_interval, daily_hour)
     last_daily_date = None  # track last date we ran daily to avoid repeats
@@ -449,14 +521,14 @@ def run_loop(poll_interval=POLL_INTERVAL, daily_hour=DAILY_HOUR_UTC):
     try:
         while True:
             try:
-                run_scrape_once(limit=25, sort="TRENDING")
+                await run_scrape_once(limit=25)
                 
                 # Daily trending check
                 now = datetime.utcnow()
                 today_date = now.date()
                 if now.hour == daily_hour and (last_daily_date != today_date):
                     try:
-                        send_daily_trending(limit=12)
+                        await send_daily_trending(limit=12)
                         last_daily_date = today_date
                     except Exception as e:
                         logging.error(f"Daily trending failed: {e}")
@@ -466,13 +538,13 @@ def run_loop(poll_interval=POLL_INTERVAL, daily_hour=DAILY_HOUR_UTC):
                 if ADMIN_ID:
                     send_telegram_message(ADMIN_ID, f"[❌ Zealy main error] {str(e)[:200]}")
             
-            time.sleep(poll_interval)
+            await asyncio.sleep(poll_interval)
             
     except KeyboardInterrupt:
         logging.info("Shutting down gracefully...")
     except Exception as e:
         logging.exception("Fatal error in main loop")
 
-# This MUST be at the very bottom with NO indentation
+# ---------------------- Main Execution ----------------------
 if __name__ == "__main__":
-    run_loop()
+    asyncio.run(run_loop())
