@@ -1,4 +1,4 @@
-"""
+        """
 Zealy scraper for zkDrop Bot (PLAYWRIGHT EDITION)
 All original functionality + critical upgrades:
 1. Secure MongoDB TLS
@@ -6,16 +6,16 @@ All original functionality + critical upgrades:
 3. Random user-agents
 4. Playwright headless browser
 5. Advanced anti-detection
+6. Proper async/await handling
 """
 
 import os
 import json
-import time
 import math
 import random
 import logging
 import asyncio
-import requests
+import aiohttp
 from datetime import datetime, timedelta
 from pymongo import MongoClient
 from urllib.parse import urljoin
@@ -170,21 +170,22 @@ def compute_rank_score(scam_score, twitter_score, xp):
     return round(rank, 2)
 
 # ---------------------- Messaging Helpers ----------------------
-def send_telegram_message(chat_id, text, parse_mode="Markdown"):
+async def send_telegram_message(chat_id, text, parse_mode="Markdown"):
     if not BOT_TOKEN:
         logging.warning("BOT_TOKEN not set; skipping telegram send.")
         return False
     send_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode, "disable_web_page_preview": False}
     try:
-        r = requests.post(send_url, json=payload, timeout=12)
-        r.raise_for_status()
-        return True
+        async with aiohttp.ClientSession() as session:
+            async with session.post(send_url, json=payload, timeout=12) as resp:
+                resp.raise_for_status()
+                return True
     except Exception as e:
         logging.error(f"[Telegram] send error to {chat_id}: {e}")
         return False
 
-def broadcast_to_all_users(text, skip_admin=False):
+async def broadcast_to_all_users(text, skip_admin=False):
     users = list(users_col.find({}))
     sent = 0
     for u in users:
@@ -193,12 +194,12 @@ def broadcast_to_all_users(text, skip_admin=False):
             continue
         if skip_admin and (str(chat_id) == str(ADMIN_ID) or chat_id == ADMIN_ID):
             continue
-        ok = send_telegram_message(chat_id, text)
+        ok = await send_telegram_message(chat_id, text)
         if ok:
             sent += 1
         else:
             logging.debug(f"Failed to send to user {chat_id}")
-        time.sleep(0.15)
+        await asyncio.sleep(0.15)
     logging.info(f"Broadcast sent to {sent} users.")
     return sent
 
@@ -288,14 +289,12 @@ async def fetch_community_quests(slug, limit=12):
             url = f"{BASE_URL}/c/{slug}/questboard"
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
             
-            # Wait for quests to load
             try:
                 await page.wait_for_selector(".quest-item", timeout=15000)
             except:
                 logging.warning(f"No quests found for {slug}")
                 return None
             
-            # Extract quest data
             quests = []
             items = await page.query_selector_all(".quest-item")
             for item in items[:limit]:
@@ -362,7 +361,6 @@ async def process_and_send(community):
     if not quests:
         return None
 
-    # Calculate max XP and get sample description
     xp_values = []
     sample_desc = None
     for q in quests:
@@ -392,13 +390,13 @@ async def process_and_send(community):
     log_sent(url)
 
     if should_send_now:
-        broadcast_to_all_users(
+        await broadcast_to_all_users(
             compose_public_message(full_title, url, xp_display, twitter, scam_summary),
             skip_admin=False
         )
 
     if ADMIN_ID:
-        send_telegram_message(
+        await send_telegram_message(
             ADMIN_ID,
             compose_admin_message(full_title, url, xp_display, twitter, scam_summary, rank_score)
         )
@@ -421,14 +419,14 @@ async def run_scrape_once(limit=25):
         msg = f"⚠️ Zealy scrape failed: {str(e)[:200]}"
         logging.error(msg)
         if ADMIN_ID:
-            send_telegram_message(ADMIN_ID, msg)
+            await send_telegram_message(ADMIN_ID, msg)
         return []
 
     if not communities:
         msg = f"⚠️ Zealy scrape returned no communities at {datetime.utcnow().isoformat()} UTC."
         logging.warning(msg)
         if ADMIN_ID:
-            send_telegram_message(ADMIN_ID, msg)
+            await send_telegram_message(ADMIN_ID, msg)
         return []
 
     processed = []
@@ -445,7 +443,7 @@ async def run_scrape_once(limit=25):
         except Exception as e:
             logging.exception(f"Error processing community {slug}")
             if ADMIN_ID:
-                send_telegram_message(ADMIN_ID, f"[❌] Error processing {slug}: {e}")
+                await send_telegram_message(ADMIN_ID, f"[❌] Error processing {slug}: {e}")
     
     logging.info(f"Scrape pass finished. Processed {len(processed)} items.")
     return processed
@@ -457,13 +455,13 @@ async def send_daily_trending(limit=12):
     except Exception as e:
         logging.error(f"Failed to fetch communities for daily report: {e}")
         if ADMIN_ID:
-            send_telegram_message(ADMIN_ID, "⚠️ Daily trending: fetch failed.")
+            await send_telegram_message(ADMIN_ID, "⚠️ Daily trending: fetch failed.")
         return False
 
     if not communities:
         logging.warning("No trending communities found for daily report.")
         if ADMIN_ID:
-            send_telegram_message(ADMIN_ID, "⚠️ Daily trending: no communities found.")
+            await send_telegram_message(ADMIN_ID, "⚠️ Daily trending: no communities found.")
         return False
 
     scored = []
@@ -473,7 +471,6 @@ async def send_daily_trending(limit=12):
         if not quests:
             continue
             
-        # Calculate max XP and get sample description
         xp_values = []
         sample_desc = None
         for q in quests:
@@ -508,7 +505,7 @@ async def send_daily_trending(limit=12):
     )
 
     if ADMIN_ID:
-        send_telegram_message(ADMIN_ID, message)
+        await send_telegram_message(ADMIN_ID, message)
         return True
     return False
 
@@ -516,14 +513,13 @@ async def send_daily_trending(limit=12):
 async def run_loop(poll_interval=POLL_INTERVAL, daily_hour=DAILY_HOUR_UTC):
     """Main loop: runs scrape every poll_interval seconds and sends daily trending at daily_hour UTC."""
     logging.info("Zealy scraper started. Poll interval: %s seconds. Daily hour (UTC): %s", poll_interval, daily_hour)
-    last_daily_date = None  # track last date we ran daily to avoid repeats
+    last_daily_date = None
     
     try:
         while True:
             try:
                 await run_scrape_once(limit=25)
                 
-                # Daily trending check
                 now = datetime.utcnow()
                 today_date = now.date()
                 if now.hour == daily_hour and (last_daily_date != today_date):
@@ -536,7 +532,7 @@ async def run_loop(poll_interval=POLL_INTERVAL, daily_hour=DAILY_HOUR_UTC):
             except Exception as e:
                 logging.exception("Main scrape error")
                 if ADMIN_ID:
-                    send_telegram_message(ADMIN_ID, f"[❌ Zealy main error] {str(e)[:200]}")
+                    await send_telegram_message(ADMIN_ID, f"[❌ Zealy main error] {str(e)[:200]}")
             
             await asyncio.sleep(poll_interval)
             
