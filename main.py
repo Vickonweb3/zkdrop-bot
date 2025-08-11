@@ -1,4 +1,5 @@
 import logging
+import logging
 import os
 import traceback
 import asyncio
@@ -13,11 +14,15 @@ from handlers.airdrop_notify import router as airdrop_router
 from handlers.admin_handler import router as admin_router
 from handlers.menu_handler import router as menu_router
 from utils.scheduler import start_scheduler
-from utils.scrapers.zealy import run_loop  # Import your scraper
+from utils.scrapers.zealy import run_loop
 
-# Add these 2 lines immediately after existing imports:
+# ===== CRITICAL PLAYWRIGHT SETUP =====
+os.environ['PLAYWRIGHT_BROWSERS_PATH'] = '/tmp/ms-playwright'
+if not os.path.exists('/tmp/ms-playwright'):
+    os.makedirs('/tmp/ms-playwright')
 os.system("playwright install chromium") 
 os.system("playwright install-deps")
+# =====================================
 
 # ✅ Logging
 logging.basicConfig(level=logging.INFO)
