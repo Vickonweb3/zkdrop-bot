@@ -17,14 +17,17 @@ from utils.scrapers.zealy import run_loop
 
 # ===== CRITICAL PLAYWRIGHT SETUP =====
 os.environ['PLAYWRIGHT_BROWSERS_PATH'] = '/tmp/ms-playwright'
-if not os.path.exists('/tmp/ms-playwright'):
-    os.makedirs('/tmp/ms-playwright')
-    
-# Skip system dependencies and use direct download
-os.system("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 pip install playwright") 
-os.system("wget https://playwright.azureedge.net/builds/chromium/1105/chromium-linux.zip -O /tmp/chromium.zip")
-os.system("unzip /tmp/chromium.zip -d /tmp/ms-playwright/chromium-1105")
-os.system("ln -s /tmp/ms-playwright /opt/render/.cache/ms-playwright")  # Render compatibility
+
+# Create directory structure with full permissions
+os.makedirs('/tmp/ms-playwright/chromium-1105/chrome-linux', exist_ok=True, mode=0o777)
+
+# Download and extract Chromium manually
+CHROME_PATH = '/tmp/ms-playwright/chromium-1105/chrome-linux/chrome'
+if not os.path.exists(CHROME_PATH):
+    os.system("wget -q https://playwright.azureedge.net/builds/chromium/1105/chromium-linux.zip -O /tmp/chromium.zip")
+    os.system("unzip -q /tmp/chromium.zip -d /tmp/ms-playwright/chromium-1105")
+    os.system("chmod +x /tmp/ms-playwright/chromium-1105/chrome-linux/chrome")
+
 # =====================================
 
 # ✅ Logging
