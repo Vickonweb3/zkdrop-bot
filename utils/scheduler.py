@@ -12,15 +12,11 @@ from utils.scam_analyzer import analyze_airdrop
 from utils.scrapers.zealy import run_loop as scrape_zealy
 from utils.task.send_airdrop import send_airdrop_to_all
 
-
 # ✅ Start the scheduler
 def start_scheduler(bot):
     logging.info("🚀 Starting background scheduler...")
-    loop = asyncio.get_event_loop()
-    loop.create_task(run_scheduler(bot))
-
     scheduler = AsyncIOScheduler(timezone=utc)
-
+    
     # 🔁 Keep-alive job every 4 minutes
     async def keep_alive():
         try:
@@ -35,20 +31,23 @@ def start_scheduler(bot):
 
     scheduler.add_job(keep_alive, "interval", minutes=4)
     scheduler.start()
+    
+    # Start the main scraper loop
+    asyncio.create_task(run_scheduler(bot))
 
-
-# 🔁 Background loop every 16 mins
+# 🔁 Main scraping loop
 async def run_scheduler(bot):
     while True:
         logging.info("🔄 Running Zealy scraper...")
 
         try:
-            new_drops = scrape_zealy()
+            # ===== FIXED AWAIT HERE =====
+            new_drops = await scrape_zealy()  # Now properly awaited
             logging.info(f"🔍 Found {len(new_drops)} new airdrops from Zealy.")
         except Exception as err:
             logging.error(f"❌ Zealy scrape error: {err}")
-            new_drops = await run_loop()  # Add 'await' here
-        # ✅ Try to get unposted airdrop from MongoDB
+            continue  # Skip this iteration if scrape fails
+
         try:
             airdrop = get_unposted_airdrop()
         except Exception as db_err:
@@ -65,7 +64,7 @@ async def run_scheduler(bot):
                 )
 
                 if scam_score >= 30:
-                    logging.warning(f"🚨 Scam score too high ({scam_score}) — Skipping airdrop: {airdrop.get('title')}")
+                    logging.warning(f"🚨 Scam score too high ({scam_score}) — Skipping: {airdrop.get('title')}")
                     mark_airdrop_posted(airdrop["_id"])
                     continue
 
@@ -91,9 +90,7 @@ async def run_scheduler(bot):
 
             except Exception as err:
                 logging.error(f"❌ Error sending airdrop: {err}")
-
         else:
             logging.info("😴 No unposted airdrops found.")
 
-        # ⏱️ Wait 16 minutes
         await asyncio.sleep(TASK_INTERVAL_MINUTES * 60)
