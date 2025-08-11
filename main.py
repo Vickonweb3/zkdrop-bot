@@ -1,5 +1,4 @@
 import logging
-import logging
 import os
 import traceback
 import asyncio
@@ -20,8 +19,12 @@ from utils.scrapers.zealy import run_loop
 os.environ['PLAYWRIGHT_BROWSERS_PATH'] = '/tmp/ms-playwright'
 if not os.path.exists('/tmp/ms-playwright'):
     os.makedirs('/tmp/ms-playwright')
-os.system("playwright install chromium") 
-os.system("playwright install-deps")
+    
+# Skip system dependencies and use direct download
+os.system("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 pip install playwright") 
+os.system("wget https://playwright.azureedge.net/builds/chromium/1105/chromium-linux.zip -O /tmp/chromium.zip")
+os.system("unzip /tmp/chromium.zip -d /tmp/ms-playwright/chromium-1105")
+os.system("ln -s /tmp/ms-playwright /opt/render/.cache/ms-playwright")  # Render compatibility
 # =====================================
 
 # ✅ Logging
