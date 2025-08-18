@@ -11,7 +11,6 @@ All original functionality + critical upgrades:
 """
 
 import os
-import json
 import math
 import random
 import logging
@@ -19,7 +18,6 @@ import asyncio
 import aiohttp
 from datetime import datetime, timedelta
 from pymongo import MongoClient
-from urllib.parse import urljoin
 from playwright.async_api import async_playwright
 import re
 
@@ -264,39 +262,63 @@ async def fetch_explore_communities(limit=30):
                 viewport={"width": 1920, "height": 1080}
             )
             
+            # Basic stealth adjustments
+            try:
+                await context.add_init_script(
+                    "() => { Object.defineProperty(navigator, 'webdriver', {get: () => false}); "
+                    "Object.defineProperty(navigator, 'platform', {get: () => 'Win32'}); "
+                    "Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']}); "
+                    "window.navigator.chrome = { runtime: {} }; }"
+                )
+            except Exception:
+                # not critical; continue
+                pass
+
             page = await context.new_page()
             
             logger.info("🌐 Navigating to Zealy explore page...")
             await page.goto(f"{BASE_URL}/explore", wait_until="domcontentloaded", timeout=60000)
 
             # Add this right after page.goto()
-logger.info(f"Page URL: {page.url}")
-logger.info(f"Page title: {await page.title()}")
+            try:
+                logger.info(f"Page URL: {page.url}")
+                title = await page.title()
+                logger.info(f"Page title: {title}")
+            except Exception as e:
+                logger.debug(f"Could not get page title/url: {e}")
 
-# Check if we're being blocked
-content_snippet = await page.content()
-if "blocked" in content_snippet.lower() or "captcha" in content_snippet.lower():
-    logger.error("🚨 BLOCKED BY ZEALY!")
-    
-# Check if page loaded at all
-body_text = await page.inner_text('body')
-logger.info(f"Body text length: {len(body_text)}")
-logger.info(f"Body text sample: {body_text[:200]}")
+            # Check if we're being blocked
+            try:
+                content_snippet = await page.content()
+                if "blocked" in content_snippet.lower() or "captcha" in content_snippet.lower():
+                    logger.error("🚨 BLOCKED BY ZEALY!")
+            except Exception as e:
+                logger.debug(f"Could not get page content: {e}")
+                
+            # Check if page loaded at all
+            try:
+                body_text = await page.inner_text('body')
+                logger.info(f"Body text length: {len(body_text)}")
+                logger.info(f"Body text sample: {body_text[:200]}")
+            except Exception as e:
+                logger.debug(f"Could not read body text: {e}")
 
-            logger.info("⏳ Waiting for React to render...")
-            await asyncio.sleep(8)  # Give React time to load
-            
-            # Scroll to trigger lazy loading
+            # Prefer waiting on selectors rather than fixed sleep
+            try:
+                await page.wait_for_selector("a[href*='/c/']", timeout=15000)
+            except Exception:
+                await asyncio.sleep(6)
+
+            # Scroll to trigger lazy loading gently
             logger.info("📜 Scrolling to load more communities...")
-            for i in range(5):
-                await page.evaluate("window.scrollBy(0, window.innerHeight)")
-                await asyncio.sleep(2)
+            for i in range(4):
+                try:
+                    await page.evaluate("window.scrollBy(0, window.innerHeight)")
+                    await asyncio.sleep(1.5 + random.random())
+                except Exception:
+                    break
             
-            # Go back to top
-            await page.evaluate("window.scrollTo(0, 0)")
-            await asyncio.sleep(2)
-            
-            # Save debug info
+            # Save debug info (trimmed)
             try:
                 content = await page.content()
                 with open('zealy_debug.html', 'w', encoding='utf-8') as f:
@@ -305,83 +327,90 @@ logger.info(f"Body text sample: {body_text[:200]}")
             except Exception as e:
                 logger.warning(f"Could not save debug info: {e}")
             
-            # STRATEGY 1: Use the REAL selectors from Chat4data.ai (converted)
-            logger.info("🎯 STRATEGY 1: Using Chat4data.ai converted selectors...")
-            
-            # Step 1: Find the main communities grid
+            # STRATEGY 1: Prefer anchor-based discovery (more stable)
+            logger.info("🎯 STRATEGY 1: Anchor href-based discovery...")
+            try:
+                anchors = await page.query_selector_all("a[href*='/c/']:not([href*='/create']):not([href*='/settings'])")
+                if anchors:
+                    seen = set()
+                    communities = []
+                    for a in anchors:
+                        try:
+                            href = await a.get_attribute('href')
+                            if not href or '/c/' not in href:
+                                continue
+                            slug = href.split('/c/')[-1].split('/')[0].split('?')[0].split('#')[0]
+                            if not slug or len(slug) < 2 or slug in seen:
+                                continue
+                            seen.add(slug)
+                            text = (await a.text_content()) or ""
+                            title = text.strip() if text.strip() else slug.replace('-', ' ').title()
+                            # Skip noisy links
+                            if any(s in title.lower() for s in ['create', 'login', 'signup', 'explore', 'search']):
+                                continue
+                            communities.append({
+                                "title": title[:100],
+                                "slug": slug,
+                                "url": build_zealy_url(slug),
+                                "logo": None,
+                                "twitter": None,
+                                "description": ""
+                            })
+                            if len(communities) >= limit:
+                                break
+                        except Exception:
+                            continue
+                    if communities:
+                        logger.info(f"✅ Found {len(communities)} communities via anchors")
+                        return communities[:limit]
+            except Exception:
+                pass
+
+            # STRATEGY 2: Grid/card based extraction (fallback)
+            logger.info("🔄 STRATEGY 2: Grid/card based extraction...")
             main_grid_selectors = [
                 "div.grid[class*='grid-cols-3'][class*='gap-400']",
                 "div[class*='grid'][class*='grid-cols-3']",
-                "div.grid[class*='grid-cols-2']",  # Fallback for mobile
+                "div.grid[class*='grid-cols-2']",
                 "div[class*='grid'][class*='gap-400']",
-                "div.grid"  # Most generic
+                "div.grid"
             ]
-            
             main_grid = None
             for selector in main_grid_selectors:
                 try:
                     grid_elements = await page.query_selector_all(selector)
                     if grid_elements:
-                        main_grid = grid_elements[0]  # Use first grid found
+                        main_grid = grid_elements[0]
                         logger.info(f"✅ Found main grid with selector: {selector}")
                         break
                 except Exception:
                     continue
-            
+
             if main_grid:
-                # Step 2: Get all community cards from the grid
-                logger.info("📦 Extracting community cards from grid...")
-                
-                # Get all direct children of the grid (these should be community cards)
-                community_cards = await main_grid.query_selector_all("> div")
+                try:
+                    community_cards = await main_grid.query_selector_all("> div")
+                except Exception:
+                    community_cards = await main_grid.query_selector_all("div")
                 logger.info(f"Found {len(community_cards)} community cards in grid")
-                
                 if community_cards:
                     communities = await extract_communities_from_grid_cards(page, community_cards, limit)
                     if communities:
                         logger.info(f"✅ SUCCESS! Extracted {len(communities)} communities from grid")
                         return communities[:limit]
-            
-            # STRATEGY 2: Fallback - Direct link search with better selectors
-            logger.info("🔄 STRATEGY 2: Direct community link search...")
-            
-            # Look for community links anywhere on the page
-            community_link_selectors = [
-                "a[href*='/c/']:not([href*='/create']):not([href*='/settings'])",
-                "section a[href*='/c/']",  # Links within main section
-                "div[class*='grid'] a[href*='/c/']",  # Links within any grid
-                "main a[href*='/c/']"  # Links in main content
-            ]
-            
-            all_community_links = []
-            for selector in community_link_selectors:
-                try:
-                    links = await page.query_selector_all(selector)
-                    all_community_links.extend(links)
-                    logger.info(f"Found {len(links)} links with selector: {selector}")
-                except Exception:
-                    continue
-            
-            if all_community_links:
-                # Remove duplicates and extract community data
-                communities = await extract_communities_from_links(page, all_community_links, limit)
-                if communities:
-                    logger.info(f"✅ SUCCESS! Extracted {len(communities)} communities from links")
-                    return communities[:limit]
-            
-            # STRATEGY 3: Last resort - search by text patterns
+
+            # STRATEGY 3: Text pattern search (last resort)
             logger.info("🚨 STRATEGY 3: Text pattern search...")
-            
-            # Look for elements that might contain community names
-            text_elements = await page.query_selector_all("h1, h2, h3, h4, h5, a, span, div")
-            potential_communities = []
-            
-            for element in text_elements[:200]:  # Check first 200 elements
-                try:
-                    text = await element.text_content()
-                    if text and len(text.strip()) > 3:
-                        # Look for nearby links
-                        parent = await element.query_selector("xpath=..")
+            try:
+                text_elements = await page.query_selector_all("h1, h2, h3, h4, h5, a, span, div")
+                potential_communities = []
+                for element in text_elements[:200]:
+                    try:
+                        text = await element.text_content()
+                        if not text or len(text.strip()) <= 3:
+                            continue
+                        # try to find nearby link (closest anchor)
+                        parent_handle = await element.evaluate_handle("el => el.closest('a') || el.parentElement")
+                        parent = parent_handle.as_element() if parent_handle else None
                         if parent:
                             link = await parent.query_selector("a[href*='/c/']")
                             if link:
@@ -394,24 +423,23 @@ logger.info(f"Body text sample: {body_text[:200]}")
                                             "slug": slug,
                                             "url": build_zealy_url(slug)
                                         })
-                                        
                                         if len(potential_communities) >= limit:
                                             break
-                except Exception:
-                    continue
-            
-            if potential_communities:
-                # Remove duplicates
-                seen_slugs = set()
-                unique_communities = []
-                for comm in potential_communities:
-                    if comm["slug"] not in seen_slugs:
-                        seen_slugs.add(comm["slug"])
-                        unique_communities.append(comm)
-                
-                logger.info(f"✅ Text search found {len(unique_communities)} communities")
-                return unique_communities[:limit]
-            
+                    except Exception:
+                        continue
+
+                if potential_communities:
+                    seen_slugs = set()
+                    unique_communities = []
+                    for comm in potential_communities:
+                        if comm["slug"] not in seen_slugs:
+                            seen_slugs.add(comm["slug"])
+                            unique_communities.append(comm)
+                    logger.info(f"✅ Text search found {len(unique_communities)} communities")
+                    return unique_communities[:limit]
+            except Exception:
+                pass
+
             logger.warning("❌ All strategies failed - no communities found")
             return []
             
@@ -432,22 +460,17 @@ async def extract_communities_from_grid_cards(page, cards, limit):
     
     for i, card in enumerate(cards[:limit]):
         try:
-            # Based on Chat4data.ai analysis, each card contains multiple elements
-            # Look for community links within each card
-            
-            # Try different positions where links might be (from Chat4data.ai data)
             link_selectors = [
-                "a:nth-child(1)",  # First link in card
-                "a:nth-child(4)",  # Fourth link in card (from analysis)
-                "a[href*='/c/']",  # Any community link
-                "div:nth-child(3) a",  # Link in third div (from paths)
-                "div[class*='flex'] a"  # Link in flex container
+                "a:nth-child(1)",
+                "a:nth-child(4)",
+                "a[href*='/c/']",
+                "div:nth-child(3) a",
+                "div[class*='flex'] a"
             ]
             
             community_link = None
             community_href = None
             
-            # Find the main community link
             for selector in link_selectors:
                 try:
                     link = await card.query_selector(selector)
@@ -464,7 +487,6 @@ async def extract_communities_from_grid_cards(page, cards, limit):
                 logger.debug(f"Card {i+1}: No community link found")
                 continue
             
-            # Extract slug from URL
             try:
                 slug = community_href.split('/c/')[-1].split('/')[0].split('?')[0].split('#')[0]
                 if not slug or len(slug) < 2 or slug in seen_slugs:
@@ -473,10 +495,7 @@ async def extract_communities_from_grid_cards(page, cards, limit):
             except Exception:
                 continue
             
-            # Extract title - try multiple methods
             title = await extract_title_from_card(card, community_link, slug)
-            
-            # Extract additional data from card (Twitter, participants, etc.)
             additional_data = await extract_additional_card_data(card)
             
             community = {
@@ -671,6 +690,14 @@ async def fetch_community_quests(slug, limit=12):
                 user_agent=random.choice(USER_AGENTS)
             )
             
+            # Minimal stealth
+            try:
+                await context.add_init_script(
+                    "() => { Object.defineProperty(navigator, 'webdriver', {get: () => false}); }"
+                )
+            except Exception:
+                pass
+
             page = await context.new_page()
             url = f"{BASE_URL}/c/{slug}/questboard"
             
@@ -835,14 +862,21 @@ async def run_scrape_once(limit=25):
                     twitter_score = rate_twitter_buzz(c['twitter'])
                 
                 # Calculate XP (use max XP from quests)
-                xp_values = [int(q['xp']) for q in sample_quests if q.get('xp') and q['xp'].isdigit()]
+                xp_values = []
+                for q in sample_quests:
+                    xp_raw = q.get('xp')
+                    try:
+                        if xp_raw:
+                            xp_values.append(int(str(xp_raw).replace(',', '')))
+                    except Exception:
+                        continue
                 xp_display = max(xp_values) if xp_values else "?"
                 
                 # Calculate rank score
                 rank_score = compute_rank_score(
                     scam_summary.get('scam_score'),
                     twitter_score,
-                    xp_display if isinstance(xp_display, int) else 0
+                    xp_display if isinstance(xp_display, (int, float)) else 0
                 )
                 
                 # Save record
