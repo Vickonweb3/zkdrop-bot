@@ -13,15 +13,21 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Upgrade pip and install requirements (if present)
+      - name: Upgrade pip and install requirements (exclude playwright)
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt || true; fi
+          if [ -f requirements.txt ]; then
+            # create a requirements file without any 'playwright' line (case-insensitive)
+            grep -i -v '^playwright' requirements.txt > /tmp/req-no-playwright.txt || true
+            # if the new file is non-empty, install it
+            if [ -s /tmp/req-no-playwright.txt ]; then
+              pip install --no-cache-dir -r /tmp/req-no-playwright.txt
+            fi
+          fi
 
       - name: Run Zealy debug script
         run: |
           python -V
-          # Run the debug script (will save screenshot/html and print anchors)
           python utils/scrapers/zealy_debug.py || true
 
       - name: Upload debug artifacts
