@@ -25,10 +25,10 @@ jobs:
             fi
           fi
 
-      - name: Diagnostic: show python and playwright presence
+      - name: Diagnostic - show python and playwright presence
         run: |
           python -V
-          python -c "import importlib; print('playwright present:', importlib.util.find_spec('playwright') is not None)"
+          python -c "import importlib; print('playwright present:', importlib.util.find_spec('playwright') is not None)" || true
           python -c "import playwright; print('playwright version:', getattr(playwright, '__version__', 'unknown'))" || true
 
       - name: Run Zealy debug script
