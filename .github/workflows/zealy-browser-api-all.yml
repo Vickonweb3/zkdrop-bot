@@ -1,0 +1,39 @@
+name: Zealy Browser API Fetch (all pages)
+on:
+  workflow_dispatch:
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.42.0-jammy
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Playwright Python and other deps (skip playwright in requirements)
+        run: |
+          python -m pip install --upgrade pip
+          pip install "playwright==1.42.0"
+          if [ -f requirements.txt ]; then
+            grep -i -v '^playwright' requirements.txt > /tmp/req-no-playwright.txt || true
+            if [ -s /tmp/req-no-playwright.txt ]; then
+              pip install --no-cache-dir -r /tmp/req-no-playwright.txt
+            fi
+          fi
+
+      - name: Run browser-api-all script
+        run: |
+          python -V
+          python utils/scrapers/zealy_api_via_browser_all.py || true
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zealy-browser-api-all
+          path: |
+            zealy_browser_api_all_raw.json
+            zealy_browser_api_all_compact.json
+            zealy_browser_api_all.png
+            zealy_browser_api_all.html
