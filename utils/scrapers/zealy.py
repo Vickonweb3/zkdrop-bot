@@ -268,7 +268,21 @@ async def fetch_explore_communities(limit=30):
             
             logger.info("🌐 Navigating to Zealy explore page...")
             await page.goto(f"{BASE_URL}/explore", wait_until="domcontentloaded", timeout=60000)
-            
+
+            # Add this right after page.goto()
+logger.info(f"Page URL: {page.url}")
+logger.info(f"Page title: {await page.title()}")
+
+# Check if we're being blocked
+content_snippet = await page.content()
+if "blocked" in content_snippet.lower() or "captcha" in content_snippet.lower():
+    logger.error("🚨 BLOCKED BY ZEALY!")
+    
+# Check if page loaded at all
+body_text = await page.inner_text('body')
+logger.info(f"Body text length: {len(body_text)}")
+logger.info(f"Body text sample: {body_text[:200]}")
+
             logger.info("⏳ Waiting for React to render...")
             await asyncio.sleep(8)  # Give React time to load
             
