@@ -4,22 +4,31 @@ on:
 
 jobs:
   debug:
-    # Run inside Playwright's official Python image (browsers & deps included)
+    # Use the Playwright image matching the version pinned in requirements.txt
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright/python:latest
+      # Use the specific Playwright image that matches playwright==1.42.0
+      image: mcr.microsoft.com/playwright/python:v1.42.0-jammy
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Upgrade pip and install requirements (exclude playwright)
+      - name: Show Python and Playwright info (diagnostic)
+        run: |
+          python -V
+          python -c "import sys; print('PYTHONPATH:', sys.path[:3])" || true
+          # Try to import playwright and print version (will fail if package not present)
+          python -c "import importlib, pkgutil; print('playwright present:', importlib.util.find_spec('playwright') is not None); \
+            import pkgutil; print('playwright pkgutil:', pkgutil.find_loader('playwright'))" || true
+          python -c "import playwright; print('playwright version:', getattr(playwright, '__version__', 'no __version__'))" || true
+
+      - name: Install requirements (exclude playwright)
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then
-            # create a requirements file without any 'playwright' line (case-insensitive)
+            # remove any 'playwright' line (case-insensitive) so we don't reinstall browsers or cause version mismatch
             grep -i -v '^playwright' requirements.txt > /tmp/req-no-playwright.txt || true
-            # if the new file is non-empty, install it
             if [ -s /tmp/req-no-playwright.txt ]; then
               pip install --no-cache-dir -r /tmp/req-no-playwright.txt
             fi
@@ -28,6 +37,7 @@ jobs:
       - name: Run Zealy debug script
         run: |
           python -V
+          python -c "import playwright; print('playwright import OK, version:', getattr(playwright, '__version__', 'unknown'))" || true
           python utils/scrapers/zealy_debug.py || true
 
       - name: Upload debug artifacts
