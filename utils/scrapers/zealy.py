@@ -179,20 +179,46 @@ except Exception:
 
 # ---------------------- Scoring helpers ----------------------
 def run_scam_checks(title, description, link):
+    """
+    Defensive wrapper around external analyzers that:
+    - Catches exceptions from analyzers so failures don't crash the scraper.
+    - Coerces non-dict returns into a small dict wrapper so .get() calls don't fail.
+    This DOES NOT change analyzer logic or outputs; it only normalizes results.
+    """
+    analyzer_res = {}
+    basic_res = {}
+
+    # analyze_airdrop may raise or return non-dict — handle both
     try:
-        analyzer_res = analyze_airdrop(title, description, link) or {}
+        raw = analyze_airdrop(title, description, link)
+        if isinstance(raw, dict):
+            analyzer_res = raw or {}
+        else:
+            # preserve the raw return value in analyzer_res['details']['raw']
+            analyzer_res = {
+                "score": raw if raw is not None and isinstance(raw, (int, float)) else None,
+                "verdict": None,
+                "details": {"raw": raw}
+            }
     except Exception as e:
         logger.exception("scam_analyzer error")
         analyzer_res = {"score": None, "verdict": "error", "details": {"error": str(e)}}
 
+    # basic_scam_check may raise or return non-dict — handle both
     try:
-        basic_res = basic_scam_check((description or "") + " " + title + " " + link) or {}
+        rawb = basic_scam_check((description or "") + " " + title + " " + link)
+        if isinstance(rawb, dict):
+            basic_res = rawb or {}
+        else:
+            basic_res = {"is_scam": bool(rawb), "flags": [], "raw": rawb}
     except Exception as e:
         logger.exception("basic_scam_check error")
         basic_res = {"is_scam": False, "flags": [], "error": str(e)}
 
-    scam_score = analyzer_res.get("score", None)
-    verdict = analyzer_res.get("verdict", None) or ("scam" if basic_res.get("is_scam") else "clean")
+    scam_score = analyzer_res.get("score") if isinstance(analyzer_res, dict) else None
+    verdict = analyzer_res.get("verdict") if isinstance(analyzer_res, dict) else None
+    if not verdict:
+        verdict = "scam" if basic_res.get("is_scam") else "clean"
 
     return {
         "scam_score": scam_score,
