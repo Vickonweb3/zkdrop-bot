@@ -228,12 +228,31 @@ def run_scam_checks(title, description, link):
     }
 
 def compute_rank_score(scam_score, twitter_score, xp):
-    s = 50.0 if scam_score is None else float(scam_score)
-    t = 50.0 if twitter_score is None else float(twitter_score)
+    """
+    Defensive compute_rank_score:
+    - tolerates non-numeric or None scam/twitter scores
+    - uses safe defaults when conversion fails
+    """
+    # scam_score -> numeric fallback 50.0
+    try:
+        s = 50.0 if scam_score is None else float(scam_score)
+    except Exception:
+        logger.debug(f"compute_rank_score: invalid scam_score={scam_score!r}, using 50.0")
+        s = 50.0
+
+    # twitter_score -> numeric fallback 50.0
+    try:
+        t = 50.0 if twitter_score is None else float(twitter_score)
+    except Exception:
+        logger.debug(f"compute_rank_score: invalid twitter_score={twitter_score!r}, using 50.0")
+        t = 50.0
+
+    # xp -> numeric fallback 0.0
     try:
         x = float(xp)
     except Exception:
         x = 0.0
+
     rank = (100.0 - s) * 0.45 + t * 0.35 + math.log1p(x) * 2.0
     return round(rank, 2)
 
