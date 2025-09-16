@@ -60,17 +60,50 @@ def format_admin_message(airdrop: dict, scam_summary=None, twitter_buzz=None) ->
     )
 
 # ---------- Scraper ----------
+# utils/scheduler.py
+# ... (keep the rest of the file as-is, only replace the function below)
+
 async def run_scraper_once(limit=25) -> List[dict]:
+    """
+    Tries to call the available scraper function on the imported zealy_scraper module.
+    The scraper module historically exposed different names in different versions:
+      - run_scrape_once(limit=...)
+      - run_once(limit=...)
+      - scrape_once(limit=...)
+      - run_loop(poll_interval=..., daily_hour=...)  <-- we won't call run_loop for a single run unless needed
+
+    This function tries to find the appropriate callable, runs it (awaiting if coroutine),
+    and returns its result (list of dicts). If no function is found, it returns [].
+    """
     if not zealy_scraper:
         logger.warning("No Zealy scraper found.")
         return []
-    fn = getattr(zealy_scraper, "run_once", None) or getattr(zealy_scraper, "scrape_once", None)
-    if fn:
+
+    # Prefer the explicit per-run function name used in this repository
+    fn = (
+        getattr(zealy_scraper, "run_scrape_once", None)
+        or getattr(zealy_scraper, "run_once", None)
+        or getattr(zealy_scraper, "scrape_once", None)
+    )
+
+    # As a last resort, if the scraper only exposes run_loop (which runs a continuous loop),
+    # do NOT await it here (that would block); instead warn and skip.
+    if not fn:
+        # If run_loop exists we still don't call it here (it is a long-running loop)
+        if getattr(zealy_scraper, "run_loop", None):
+            logger.warning("Zealy scraper only exposes run_loop (continuous). Scheduler run_scraper_once will skip calling run_loop.")
+        else:
+            logger.warning("No callable scraper entrypoint found on zealy_scraper.")
+        return []
+
+    try:
         if asyncio.iscoroutinefunction(fn):
             return await fn(limit=limit)
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, lambda: fn(limit=limit))
-    return []
+    except Exception as e:
+        logger.exception("Error when running scraper function from scheduler")
+        return []
 
 # ---------- Process DB ----------
 async def process_unposted(bot: Any, max_items=5):
