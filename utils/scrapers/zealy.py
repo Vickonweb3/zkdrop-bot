@@ -781,7 +781,6 @@ async def run_scrape_once(limit=25):
         return False
 
 # ---------------------- Daily trending ----------------------
-# Replace the existing send_daily_trending function with this version.
 async def send_daily_trending(limit=12, send_to_admin=True):
     """
     Build and optionally send the daily trending digest.
