@@ -781,7 +781,12 @@ async def run_scrape_once(limit=25):
         return False
 
 # ---------------------- Daily trending ----------------------
-async def send_daily_trending(limit=12):
+# Replace the existing send_daily_trending function with this version.
+async def send_daily_trending(limit=12, send_to_admin=True):
+    """
+    Build and optionally send the daily trending digest.
+    Returns the digest message (string) or None if nothing to send.
+    """
     try:
         cutoff = now_utc() - timedelta(hours=48)
         records = list(airdrops_col.find({
@@ -791,7 +796,7 @@ async def send_daily_trending(limit=12):
 
         if not records:
             logger.info("No recent airdrops for daily trending")
-            return False
+            return None
 
         scored = []
         for r in records:
@@ -815,20 +820,31 @@ async def send_daily_trending(limit=12):
                 continue
 
         scored.sort(reverse=True, key=lambda x: x[0])
-        message = "\n".join(
-            ["🔥 *Daily Top Trending Airdrops* 🔥"] +
-            [f"{i}. *{c['title']}* — XP: {xp} — Rank: {rank}\nLink: {c['link']}\nVerdict: {s.get('verdict','N/A')}"
-             for i, (rank, c, xp, s) in enumerate(scored[:limit], 1)]
-        )
 
-        if ADMIN_ID:
-            await send_telegram_message(ADMIN_ID, message)
-            return True
-        return False
+        # Build an attractive digest for users
+        digest_lines = ["🔥 *Daily Top Trending Airdrops* 🔥", ""]
+        for i, (rank, c, xp, s) in enumerate(scored[:limit], 1):
+            title = c.get('title', 'Unknown')[:80]
+            link = c.get('link', '')
+            verdict = s.get('verdict', 'N/A') if s else 'N/A'
+            digest_lines.append(f"{i}. *{title}* — XP: *{xp}* — Rank: *{rank}*\nLink: {link}\nVerdict: {verdict}\n")
+
+        digest_lines.append("🔎 Tip: Check the most promising drops early. Stay safe and never share private keys.")
+        message = "\n".join(digest_lines)
+
+        # Optionally send to admin as well
+        if send_to_admin and ADMIN_ID:
+            try:
+                await send_telegram_message(ADMIN_ID, message)
+            except Exception:
+                logger.exception("Failed to send daily trending to ADMIN_ID")
+
+        # Return digest so scheduler can broadcast it to all users
+        return message
 
     except Exception as e:
         logger.error(f"Daily trending failed: {e}")
-        return False
+        return None
 
 # ---------------------- Runner / Scheduler ----------------------
 async def run_loop(poll_interval=POLL_INTERVAL, daily_hour=DAILY_HOUR_UTC):
