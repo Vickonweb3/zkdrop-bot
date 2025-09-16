@@ -1,6 +1,5 @@
 import logging
 import os
-import traceback
 import asyncio
 import time
 from aiogram import Bot, Dispatcher
@@ -13,15 +12,14 @@ from handlers.airdrop_notify import router as airdrop_router
 from handlers.admin_handler import router as admin_router
 from handlers.menu_handler import router as menu_router
 from utils.scheduler import start_scheduler
-from utils.scrapers.zealy import run_loop
 
 # ===== CRITICAL PLAYWRIGHT SETUP =====
 os.environ['PLAYWRIGHT_BROWSERS_PATH'] = '/tmp/ms-playwright'
 
-# Create directory structure with full permissions
+# Create directory structure with full permissions (safe if already exists)
 os.makedirs('/tmp/ms-playwright/chromium-1105/chrome-linux', exist_ok=True, mode=0o777)
 
-# Download and extract Chromium manually
+# Download and extract Chromium manually if not present
 CHROME_PATH = '/tmp/ms-playwright/chromium-1105/chrome-linux/chrome'
 if not os.path.exists(CHROME_PATH):
     os.system("wget -q https://playwright.azureedge.net/builds/chromium/1105/chromium-linux.zip -O /tmp/chromium.zip")
@@ -34,31 +32,12 @@ if not os.path.exists(CHROME_PATH):
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-WEBHOOK_HOST = "https://zkdrop-bot.onrender.com"
+WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "https://zkdrop-bot.onrender.com")
 WEBHOOK_PATH = "/webhook"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
 last_webhook_hit = time.time()
 
-# ✅ Background Tasks
-async def zealy_scraper_task(bot: Bot):
-    """Continuous Zealy scraping in background"""
-    while True:
-        try:
-            logger.info("🔍 Running Zealy scraper...")
-            await run_loop()  # Your existing scraper function
-            await asyncio.sleep(60)  # Check every 60 seconds
-        except Exception as e:
-            logger.error(f"Scraper error: {e}")
-            try:
-                await bot.send_message(
-                    ADMIN_ID,
-                    f"🚨 Zealy Scraper Failed:\n<code>{str(e)[:200]}</code>",
-                    parse_mode="HTML"
-                )
-            except:
-                pass
-            await asyncio.sleep(60)
 
 async def keep_alive_telegram(bot: Bot):
     """Ping Telegram every 1 min"""
@@ -74,9 +53,10 @@ async def keep_alive_telegram(bot: Bot):
                     text=f"🚨 *Telegram API down!*\n`{str(e)}`",
                     parse_mode="Markdown"
                 )
-            except:
-                pass
+            except Exception:
+                logger.exception("Failed to notify admin about Telegram ping failure")
         await asyncio.sleep(60)
+
 
 async def periodic_webhook_reset(bot: Bot):
     """Reset webhook every 10 min"""
@@ -92,9 +72,10 @@ async def periodic_webhook_reset(bot: Bot):
                     text=f"🚨 *Webhook reset failed!*\n`{str(e)}`",
                     parse_mode="Markdown"
                 )
-            except:
-                pass
+            except Exception:
+                logger.exception("Failed to notify admin about webhook reset failure")
         await asyncio.sleep(600)
+
 
 async def monitor_webhook_inactivity(bot: Bot):
     """Alert if webhook silent for 5 min"""
@@ -110,18 +91,21 @@ async def monitor_webhook_inactivity(bot: Bot):
                 )
                 logger.warning("⚠️ Webhook inactive >5 mins.")
                 last_webhook_hit = now
-            except:
-                pass
+            except Exception:
+                logger.exception("Failed to notify admin about webhook inactivity")
         await asyncio.sleep(60)
+
 
 # ✅ Web Handlers
 async def handle(request):
     """Health check endpoint"""
     return web.Response(text="✅ ZK Drop Bot is live...")
 
+
 async def uptime_check(request):
     """Uptime monitoring"""
     return web.Response(status=200, text="🟢 Uptime check OK")
+
 
 class CustomRequestHandler(SimpleRequestHandler):
     """Track webhook activity"""
@@ -129,6 +113,7 @@ class CustomRequestHandler(SimpleRequestHandler):
         global last_webhook_hit
         last_webhook_hit = time.time()
         return await super()._handle(request)
+
 
 # ✅ Main App Setup
 def main():
@@ -142,52 +127,55 @@ def main():
     dp.include_router(menu_router)
 
     app = web.Application()
-    
+
     # Register routes
     app.router.add_get("/", handle)
     app.router.add_get("/uptime", uptime_check)
     CustomRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
 
-    # Startup/Shutdown handlers
-       async def on_startup(app):
-    """Initialize everything when starting"""
-    await bot.set_webhook(WEBHOOK_URL)
-    await bot.set_my_commands([
-        BotCommand(command="start", description="Start or restart the bot"),
-        BotCommand(command="menu", description="Open the main menu"),
-    ])
+    async def on_startup(app):
+        """Initialize everything when starting"""
+        await bot.set_webhook(WEBHOOK_URL)
+        await bot.set_my_commands([
+            BotCommand(command="start", description="Start or restart the bot"),
+            BotCommand(command="menu", description="Open the main menu"),
+        ])
 
-    # Start background tasks (we do NOT start the continuous zealy_scraper_task here
-    # because the scheduler will run scrapes and broadcasts).
-    # If you previously had: app['zealy_scraper'] = asyncio.create_task(zealy_scraper_task(bot))
-    # comment or remove that line to avoid double-running scrapers.
-    app['telegram_heartbeat'] = asyncio.create_task(keep_alive_telegram(bot))
-    app['webhook_monitor'] = asyncio.create_task(periodic_webhook_reset(bot))
-    app['webhook_activity_checker'] = asyncio.create_task(monitor_webhook_inactivity(bot))
+        # Start background tasks (we do NOT start the continuous zealy_scraper_task here
+        # because the scheduler will run scrapes and broadcasts).
+        # If you previously had: app['zealy_scraper'] = asyncio.create_task(zealy_scraper_task(bot))
+        # comment or remove that line to avoid double-running scrapers.
+        app['telegram_heartbeat'] = asyncio.create_task(keep_alive_telegram(bot))
+        app['webhook_monitor'] = asyncio.create_task(periodic_webhook_reset(bot))
+        app['webhook_activity_checker'] = asyncio.create_task(monitor_webhook_inactivity(bot))
 
-    # Start the scheduler which will run live/interval/daily jobs and handle broadcasting
-    start_scheduler(bot)
-    logger.info("🚀 Bot fully initialized")
-   
-async def on_shutdown(app):
+        # Start the scheduler which will run live/interval/daily jobs and handle broadcasting
+        start_scheduler(bot)
+        logger.info("🚀 Bot fully initialized")
+
+    async def on_shutdown(app):
         """Cleanup before shutdown"""
         logger.warning("💤 Shutting down...")
-        
-        # Cancel all background tasks
-        for task in [
-            'zealy_scraper',
+
+        # Cancel background tasks we created
+        for task_name in [
             'telegram_heartbeat',
             'webhook_monitor',
             'webhook_activity_checker'
         ]:
-            if task in app:
-                app[task].cancel()
+            task = app.get(task_name)
+            if task:
+                task.cancel()
                 try:
-                    await app[task]
+                    await task
                 except asyncio.CancelledError:
                     pass
-                    
-        await bot.delete_webhook()
+
+        try:
+            await bot.delete_webhook()
+        except Exception:
+            logger.exception("Failed to delete webhook during shutdown")
+
         logger.info("🛑 Bot shutdown complete")
 
     app.on_startup.append(on_startup)
@@ -195,6 +183,7 @@ async def on_shutdown(app):
     setup_application(app, dp, bot=bot)
 
     web.run_app(app, host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
 
 if __name__ == "__main__":
     main()
