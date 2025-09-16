@@ -149,27 +149,27 @@ def main():
     CustomRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
 
     # Startup/Shutdown handlers
-        async def on_startup(app):
-        """Initialize everything when starting"""
-        await bot.set_webhook(WEBHOOK_URL)
-        await bot.set_my_commands([
-            BotCommand(command="start", description="Start or restart the bot"),
-            BotCommand(command="menu", description="Open the main menu"),
-        ])
-        
-        # Start background tasks (we do NOT start the continuous zealy_scraper_task here
-        # because the scheduler will run scrapes and broadcasts).
-        # If you previously had: app['zealy_scraper'] = asyncio.create_task(zealy_scraper_task(bot))
-        # comment or remove that line to avoid double-running scrapers.
-        app['telegram_heartbeat'] = asyncio.create_task(keep_alive_telegram(bot))
-        app['webhook_monitor'] = asyncio.create_task(periodic_webhook_reset(bot))
-        app['webhook_activity_checker'] = asyncio.create_task(monitor_webhook_inactivity(bot))
-        
-        # Start the scheduler which will run live/interval/daily jobs and handle broadcasting
-        start_scheduler(bot)
-        logger.info("🚀 Bot fully initialized")
+       async def on_startup(app):
+    """Initialize everything when starting"""
+    await bot.set_webhook(WEBHOOK_URL)
+    await bot.set_my_commands([
+        BotCommand(command="start", description="Start or restart the bot"),
+        BotCommand(command="menu", description="Open the main menu"),
+    ])
 
-    async def on_shutdown(app):
+    # Start background tasks (we do NOT start the continuous zealy_scraper_task here
+    # because the scheduler will run scrapes and broadcasts).
+    # If you previously had: app['zealy_scraper'] = asyncio.create_task(zealy_scraper_task(bot))
+    # comment or remove that line to avoid double-running scrapers.
+    app['telegram_heartbeat'] = asyncio.create_task(keep_alive_telegram(bot))
+    app['webhook_monitor'] = asyncio.create_task(periodic_webhook_reset(bot))
+    app['webhook_activity_checker'] = asyncio.create_task(monitor_webhook_inactivity(bot))
+
+    # Start the scheduler which will run live/interval/daily jobs and handle broadcasting
+    start_scheduler(bot)
+    logger.info("🚀 Bot fully initialized")
+   
+async def on_shutdown(app):
         """Cleanup before shutdown"""
         logger.warning("💤 Shutting down...")
         
