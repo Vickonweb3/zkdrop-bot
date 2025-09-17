@@ -15,3 +15,4 @@ OWNER_USERNAME = os.getenv("OWNER_USERNAME", "@YourUsername")
 # ⏰ Scheduler intervals
 TASK_INTERVAL_MINUTES = int(os.getenv("TASK_INTERVAL_MINUTES", 16))  # how often to send airdrops
 SCRAPE_INTERVAL_HOURS = int(os.getenv("SCRAPE_INTERVAL_HOURS", 1))   # how often to scrape new airdrops
+DAILY_HOUR_UTC = int(os.getenv("DAILY_HOUR_UTC", 12))  # when to send trending digest (default 12:00 UTC)
