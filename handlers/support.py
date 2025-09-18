@@ -2,13 +2,25 @@ import logging
 from aiogram import types, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.filters import Command
 from config.settings import ADMIN_ID
 from datetime import datetime
-from main import tickets_collection, banned_collection  # use main.py DB collections
+from main import tickets_collection, banned_collection  # DB collections from main.py
+
+# ----------------------------
+# Logger setup
+# ----------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 router = Router()
 
+# ----------------------------
 # FSM States
+# ----------------------------
 class SupportStates(StatesGroup):
     waiting_for_category = State()
     waiting_for_message = State()
@@ -33,7 +45,7 @@ def log_support_ticket(ticket_id, user_id, username, category, message, status="
         "category": category,
         "message": message,
         "status": status,
-        "timestamp": datetime.now()
+        "timestamp": datetime.utcnow()  # <- UTC timestamp
     })
 
 def get_ticket(ticket_id):
@@ -54,14 +66,13 @@ def get_banned_users():
 # ----------------------------
 # Step 1: /support command
 # ----------------------------
-@router.message(commands=["support"])
+@router.message(Command(commands=["support"]))
 async def start_support(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     if user_id in get_banned_users():
         await message.answer("❌ You are currently restricted from submitting support tickets. Contact admin if this is a mistake.")
         return
 
-    # Ask for category
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     for cat in CATEGORIES:
         keyboard.add(cat)
@@ -93,60 +104,60 @@ async def receive_support_message(message: types.Message, state: FSMContext):
     user_name = message.from_user.full_name
     text = message.text
 
-    # Generate ticket ID
     ticket_number = get_next_ticket_number()
-    ticket_id = f"SB-{datetime.now().year}-{ticket_number:03d}"
+    ticket_id = f"SB-{datetime.utcnow().year}-{ticket_number:03d}"
 
-    # Forward to admin
     support_msg = (
         f"📨 New Support Ticket\n"
         f"Ticket ID: {ticket_id}\n"
         f"User: {user_name} (ID: {user_id})\n"
         f"Category: {category}\n"
         f"Message:\n{text}\n"
-        f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        f"Timestamp: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
     )
-    await message.bot.send_message(ADMIN_ID, support_msg)
+    try:
+        await message.bot.send_message(ADMIN_ID, support_msg)
+    except Exception as e:
+        logger.exception(f"Failed to send support ticket {ticket_id} to admin: {e}")
 
-    # Log ticket to DB
     log_support_ticket(ticket_id, user_id, user_name, category, text, status="Open")
-
     await message.answer(f"✅ Your ticket {ticket_id} has been submitted! We'll reply soon.")
     await state.clear()
 
 # ----------------------------
 # Step 4: Admin reply command
-# Usage: /reply <ticket_id> <message>
 # ----------------------------
-@router.message(commands=["reply"])
+@router.message(Command(commands=["reply"]))
 async def admin_reply(message: types.Message):
     if message.from_user.id != ADMIN_ID:
-        return  # Only admin can reply
+        return
 
     try:
         parts = message.text.split(maxsplit=2)
         ticket_id = parts[1]
         reply_text = parts[2]
+    except IndexError:
+        await message.answer("❌ Usage: /reply <ticket_id> <message>")
+        return
 
-        # Retrieve ticket from DB
-        ticket = get_ticket(ticket_id)
-        if not ticket:
-            await message.answer("❌ Ticket ID not found.")
-            return
+    ticket = get_ticket(ticket_id)
+    if not ticket:
+        await message.answer("❌ Ticket ID not found.")
+        return
 
-        user_id = ticket["user_id"]
+    user_id = ticket["user_id"]
+    try:
         await message.bot.send_message(user_id, f"💬 Reply from Support: {reply_text}")
         await message.answer(f"✅ Message sent to {user_id}")
-
-        # Update ticket status
         update_ticket_status(ticket_id, "Replied")
-    except:
-        await message.answer("❌ Usage: /reply <ticket_id> <message>")
+    except Exception as e:
+        logger.exception(f"Failed to reply to ticket {ticket_id}: {e}")
+        await message.answer("❌ Failed to send message to user.")
 
 # ----------------------------
 # Step 5: Ban / unban users
 # ----------------------------
-@router.message(commands=["ban"])
+@router.message(Command(commands=["ban"]))
 async def ban_user(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
@@ -155,10 +166,10 @@ async def ban_user(message: types.Message):
         user_id = int(message.text.split()[1])
         log_banned_user(user_id)
         await message.answer(f"✅ User {user_id} has been banned from support.")
-    except:
+    except Exception:
         await message.answer("❌ Usage: /ban <user_id>")
 
-@router.message(commands=["unban"])
+@router.message(Command(commands=["unban"]))
 async def unban_user(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
@@ -167,13 +178,13 @@ async def unban_user(message: types.Message):
         user_id = int(message.text.split()[1])
         remove_banned_user(user_id)
         await message.answer(f"✅ User {user_id} has been unbanned.")
-    except:
+    except Exception:
         await message.answer("❌ Usage: /unban <user_id>")
 
 # ----------------------------
 # Step 6: List banned users
 # ----------------------------
-@router.message(commands=["banned"])
+@router.message(Command(commands=["banned"]))
 async def list_banned_users(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
@@ -183,7 +194,5 @@ async def list_banned_users(message: types.Message):
         await message.answer("No users are currently banned.")
         return
 
-    text = "🚫 Banned Users:\n"
-    for uid in banned_list:
-        text += f"- {uid}\n"
+    text = "🚫 Banned Users:\n" + "\n".join(f"- {uid}" for uid in banned_list)
     await message.answer(text)
