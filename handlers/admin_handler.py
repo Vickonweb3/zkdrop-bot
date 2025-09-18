@@ -1,7 +1,14 @@
 from aiogram import types, Router
 from aiogram.filters import Command
 from config.settings import ADMIN_ID
-from database.db import count_users, get_total_participants, get_unposted_airdrop, mark_airdrop_posted
+from database.db import (
+    count_users,
+    get_total_participants,
+    get_unposted_airdrop,
+    mark_airdrop_posted,
+    airdrops_collection,
+    participants_collection
+)
 from utils.twitter_rating import rate_twitter_buzz
 
 router = Router()
@@ -18,9 +25,14 @@ async def view_stats(message: types.Message):
         return
 
     user_count = count_users()
+    airdrop_count = airdrops_collection.count_documents({})
+    participants_count = participants_collection.count_documents({})
+
     text = (
         "📊 *Bot Stats*\n\n"
         f"👥 Total Users: *{user_count}*\n"
+        f"🪂 Airdrops Saved: *{airdrop_count}*\n"
+        f"👥 Participants Tracked: *{participants_count}*\n"
         "📡 System Status: *Online*\n"
         "📅 Scheduler: *Active*\n"
     )
@@ -77,13 +89,13 @@ async def snipe_airdrop(message: types.Message):
         return
 
     # 🧠 Rate using Twitter
-    buzz = rate_twitter_buzz(airdrop["twitter_url"])
+    buzz = rate_twitter_buzz(airdrop.get("twitter_url", ""))
     caption = f"""
 🚀 *New Airdrop Detected* 🚀
 
-🔹 *Project:* {airdrop['project_name']}
-🌐 *Website:* {airdrop['project_link']}
-🐦 *Twitter:* {airdrop['twitter_url']}
+🔹 *Project:* {airdrop.get('project_name', 'Unknown')}
+🌐 *Website:* {airdrop.get('project_link', 'N/A')}
+🐦 *Twitter:* {airdrop.get('twitter_url', 'N/A')}
 🔥 *Buzz Rating:* {buzz}/10
 
 ⏳ Claim it before it's gone!
