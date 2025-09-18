@@ -48,6 +48,9 @@ db = mongo_client["zkdrop_bot"]
 tickets_collection = db["support_tickets"]
 banned_collection = db["banned_users"]
 
+# Inject collections into support.py
+support.setup_collections(tickets_collection, banned_collection)
+
 # =========================
 # Bot & Dispatcher
 # =========================
@@ -65,7 +68,7 @@ dp.include_router(menu_router)
 dp.include_router(support.router)  # support system
 
 # =========================
-# Keep last_webhook_hit updated
+# Background Tasks
 # =========================
 async def keep_alive_telegram(bot: Bot):
     while True:
@@ -80,7 +83,6 @@ async def keep_alive_telegram(bot: Bot):
                 logger.exception("Failed to notify admin")
         await asyncio.sleep(60)
 
-
 async def periodic_webhook_reset(bot: Bot):
     while True:
         try:
@@ -94,7 +96,6 @@ async def periodic_webhook_reset(bot: Bot):
                 logger.exception("Failed to notify admin")
         await asyncio.sleep(600)
 
-
 async def monitor_webhook_inactivity(bot: Bot):
     global last_webhook_hit
     while True:
@@ -107,7 +108,6 @@ async def monitor_webhook_inactivity(bot: Bot):
             except Exception:
                 logger.exception("Failed to notify admin about inactivity")
         await asyncio.sleep(60)
-
 
 # =========================
 # Web Handlers
@@ -129,7 +129,6 @@ class CustomRequestHandler(SimpleRequestHandler):
 # =========================
 def main():
     app = web.Application()
-
     app.router.add_get("/", handle)
     app.router.add_get("/uptime", uptime_check)
     CustomRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
@@ -171,9 +170,7 @@ def main():
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
     setup_application(app, dp, bot=bot)
-
     web.run_app(app, host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
-
 
 if __name__ == "__main__":
     main()
