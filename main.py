@@ -2,6 +2,7 @@ import logging
 import os
 import asyncio
 import time
+from datetime import datetime
 from aiogram import Bot, Dispatcher
 from aiogram.types import BotCommand
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
@@ -11,13 +12,13 @@ from handlers.start_handler import router as start_router
 from handlers.airdrop_notify import router as airdrop_router
 from handlers.admin_handler import router as admin_router
 from handlers.menu_handler import router as menu_router
-from handlers import support  # Added support handler
+from handlers import support  # support handler
 from utils.scheduler import start_scheduler
 from pymongo import MongoClient
+from aiogram.fsm.storage.memory import MemoryStorage
 
 # ===== CRITICAL PLAYWRIGHT SETUP =====
 os.environ['PLAYWRIGHT_BROWSERS_PATH'] = '/tmp/ms-playwright'
-
 os.makedirs('/tmp/ms-playwright/chromium-1105/chrome-linux', exist_ok=True, mode=0o777)
 
 CHROME_PATH = '/tmp/ms-playwright/chromium-1105/chrome-linux/chrome'
@@ -26,9 +27,9 @@ if not os.path.exists(CHROME_PATH):
     os.system("unzip -q /tmp/chromium.zip -d /tmp/ms-playwright/chromium-1105")
     os.system("chmod +x /tmp/ms-playwright/chromium-1105/chrome-linux/chrome")
 
-# =====================================
-
-# ✅ Logging
+# =========================
+# Logging
+# =========================
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -38,51 +39,34 @@ WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
 last_webhook_hit = time.time()
 
-# ===== MongoDB Setup =====
+# =========================
+# MongoDB Setup
+# =========================
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 mongo_client = MongoClient(MONGO_URI)
 db = mongo_client["zkdrop_bot"]
 tickets_collection = db["support_tickets"]
 banned_collection = db["banned_users"]
 
-# -----------------------------
-# MongoDB helper functions
-# -----------------------------
-def get_next_ticket_number():
-    last_ticket = tickets_collection.find_one(sort=[("ticket_number", -1)])
-    return (last_ticket["ticket_number"] + 1) if last_ticket else 1
+# =========================
+# Bot & Dispatcher
+# =========================
+bot = Bot(token=BOT_TOKEN)
+storage = MemoryStorage()  # FSM storage for support tickets
+dp = Dispatcher(storage=storage)
 
-def log_support_ticket(ticket_id, user_id, username, category, message, status="Open"):
-    ticket_number = int(ticket_id.split("-")[-1])
-    tickets_collection.insert_one({
-        "ticket_id": ticket_id,
-        "ticket_number": ticket_number,
-        "user_id": user_id,
-        "username": username,
-        "category": category,
-        "message": message,
-        "status": status,
-        "timestamp": datetime.now()
-    })
+# =========================
+# Include all routers
+# =========================
+dp.include_router(start_router)
+dp.include_router(airdrop_router)
+dp.include_router(admin_router)
+dp.include_router(menu_router)
+dp.include_router(support.router)  # support system
 
-def get_ticket(ticket_id):
-    return tickets_collection.find_one({"ticket_id": ticket_id})
-
-def update_ticket_status(ticket_id, status):
-    tickets_collection.update_one({"ticket_id": ticket_id}, {"$set": {"status": status}})
-
-def log_banned_user(user_id):
-    banned_collection.update_one({"user_id": user_id}, {"$set": {"user_id": user_id}}, upsert=True)
-
-def remove_banned_user(user_id):
-    banned_collection.delete_one({"user_id": user_id})
-
-def get_banned_users():
-    return [doc["user_id"] for doc in banned_collection.find()]
-
-# -----------------------------
+# =========================
 # Keep last_webhook_hit updated
-# -----------------------------
+# =========================
 async def keep_alive_telegram(bot: Bot):
     while True:
         try:
@@ -125,7 +109,9 @@ async def monitor_webhook_inactivity(bot: Bot):
         await asyncio.sleep(60)
 
 
-# ✅ Web Handlers
+# =========================
+# Web Handlers
+# =========================
 async def handle(request):
     return web.Response(text="✅ ZK Drop Bot is live...")
 
@@ -138,21 +124,10 @@ class CustomRequestHandler(SimpleRequestHandler):
         last_webhook_hit = time.time()
         return await super()._handle(request)
 
-
 # =========================
 # Main App Setup
 # =========================
 def main():
-    bot = Bot(token=BOT_TOKEN)
-    dp = Dispatcher()
-
-    # Include all routers
-    dp.include_router(start_router)
-    dp.include_router(airdrop_router)
-    dp.include_router(admin_router)
-    dp.include_router(menu_router)
-    dp.include_router(support.router)  # <- support system
-
     app = web.Application()
 
     app.router.add_get("/", handle)
@@ -177,7 +152,6 @@ def main():
 
     async def on_shutdown(app):
         logger.warning("💤 Shutting down...")
-
         for task_name in ['telegram_heartbeat', 'webhook_monitor', 'webhook_activity_checker']:
             task = app.get(task_name)
             if task:
