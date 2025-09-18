@@ -16,6 +16,7 @@ async def start_command(message: types.Message):
         await message.answer("⛔ You are banned from using this bot.")
         return
 
+    # ✅ Save user with join date
     save_user(user_id, username)
 
     welcome_text = (
