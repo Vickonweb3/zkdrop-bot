@@ -1,9 +1,10 @@
 import logging
-from aiogram import types, Router
+from aiogram import Bot, Dispatcher, types, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.filters import Command
-from config.settings import ADMIN_ID
+from config.settings import ADMIN_ID, BOT_TOKEN
 from datetime import datetime
 from main import tickets_collection, banned_collection  # DB collections from main.py
 
@@ -15,6 +16,13 @@ logging.basicConfig(
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# ----------------------------
+# Bot & Dispatcher
+# ----------------------------
+bot = Bot(token=BOT_TOKEN)
+storage = MemoryStorage()  # <- FSM storage
+dp = Dispatcher(storage=storage)
 
 router = Router()
 
@@ -45,7 +53,7 @@ def log_support_ticket(ticket_id, user_id, username, category, message, status="
         "category": category,
         "message": message,
         "status": status,
-        "timestamp": datetime.utcnow()  # <- UTC timestamp
+        "timestamp": datetime.utcnow()  # UTC time
     })
 
 def get_ticket(ticket_id):
@@ -70,7 +78,7 @@ def get_banned_users():
 async def start_support(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     if user_id in get_banned_users():
-        await message.answer("❌ You are currently restricted from submitting support tickets. Contact admin if this is a mistake.")
+        await message.answer("❌ You are restricted from submitting support tickets.")
         return
 
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
@@ -90,7 +98,7 @@ async def receive_category(message: types.Message, state: FSMContext):
         return
 
     await state.update_data(category=category)
-    await message.answer("✏️ Please type your message for support.", reply_markup=types.ReplyKeyboardRemove())
+    await message.answer("✏️ Type your support message:", reply_markup=types.ReplyKeyboardRemove())
     await state.set_state(SupportStates.waiting_for_message)
 
 # ----------------------------
@@ -116,16 +124,16 @@ async def receive_support_message(message: types.Message, state: FSMContext):
         f"Timestamp: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
     )
     try:
-        await message.bot.send_message(ADMIN_ID, support_msg)
+        await bot.send_message(ADMIN_ID, support_msg)
     except Exception as e:
-        logger.exception(f"Failed to send support ticket {ticket_id} to admin: {e}")
+        logger.exception(f"Failed to send ticket {ticket_id} to admin: {e}")
 
-    log_support_ticket(ticket_id, user_id, user_name, category, text, status="Open")
+    log_support_ticket(ticket_id, user_id, user_name, category, text)
     await message.answer(f"✅ Your ticket {ticket_id} has been submitted! We'll reply soon.")
     await state.clear()
 
 # ----------------------------
-# Step 4: Admin reply command
+# Step 4: Admin reply
 # ----------------------------
 @router.message(Command(commands=["reply"]))
 async def admin_reply(message: types.Message):
@@ -134,20 +142,19 @@ async def admin_reply(message: types.Message):
 
     try:
         parts = message.text.split(maxsplit=2)
-        ticket_id = parts[1]
-        reply_text = parts[2]
+        ticket_id, reply_text = parts[1], parts[2]
     except IndexError:
         await message.answer("❌ Usage: /reply <ticket_id> <message>")
         return
 
     ticket = get_ticket(ticket_id)
     if not ticket:
-        await message.answer("❌ Ticket ID not found.")
+        await message.answer("❌ Ticket not found.")
         return
 
     user_id = ticket["user_id"]
     try:
-        await message.bot.send_message(user_id, f"💬 Reply from Support: {reply_text}")
+        await bot.send_message(user_id, f"💬 Reply from Support: {reply_text}")
         await message.answer(f"✅ Message sent to {user_id}")
         update_ticket_status(ticket_id, "Replied")
     except Exception as e:
@@ -155,30 +162,28 @@ async def admin_reply(message: types.Message):
         await message.answer("❌ Failed to send message to user.")
 
 # ----------------------------
-# Step 5: Ban / unban users
+# Step 5: Ban / unban
 # ----------------------------
 @router.message(Command(commands=["ban"]))
 async def ban_user(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
-
     try:
         user_id = int(message.text.split()[1])
         log_banned_user(user_id)
-        await message.answer(f"✅ User {user_id} has been banned from support.")
-    except Exception:
+        await message.answer(f"✅ User {user_id} banned from support.")
+    except:
         await message.answer("❌ Usage: /ban <user_id>")
 
 @router.message(Command(commands=["unban"]))
 async def unban_user(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
-
     try:
         user_id = int(message.text.split()[1])
         remove_banned_user(user_id)
-        await message.answer(f"✅ User {user_id} has been unbanned.")
-    except Exception:
+        await message.answer(f"✅ User {user_id} unbanned from support.")
+    except:
         await message.answer("❌ Usage: /unban <user_id>")
 
 # ----------------------------
@@ -188,11 +193,14 @@ async def unban_user(message: types.Message):
 async def list_banned_users(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
-
     banned_list = get_banned_users()
     if not banned_list:
-        await message.answer("No users are currently banned.")
+        await message.answer("No users are banned.")
         return
-
     text = "🚫 Banned Users:\n" + "\n".join(f"- {uid}" for uid in banned_list)
     await message.answer(text)
+
+# ----------------------------
+# Include router
+# ----------------------------
+dp.include_router(router)
