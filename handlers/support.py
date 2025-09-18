@@ -5,7 +5,6 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters import Command
 from config.settings import ADMIN_ID
 from datetime import datetime
-from main import tickets_collection, banned_collection  # MongoDB collections from main.py
 
 # ----------------------------
 # Logger setup
@@ -31,6 +30,18 @@ class SupportStates(StatesGroup):
 CATEGORIES = ["Airdrop issue", "Bot issue", "Other"]
 
 # ----------------------------
+# Collections (to be injected from main.py)
+# ----------------------------
+tickets_collection = None
+banned_collection = None
+
+def setup_collections(tickets, banned):
+    """Inject MongoDB collections from main.py to avoid circular imports."""
+    global tickets_collection, banned_collection
+    tickets_collection = tickets
+    banned_collection = banned
+
+# ----------------------------
 # Helper functions
 # ----------------------------
 def get_next_ticket_number():
@@ -47,7 +58,7 @@ def log_support_ticket(ticket_id, user_id, username, category, message, status="
         "category": category,
         "message": message,
         "status": status,
-        "timestamp": datetime.utcnow()  # UTC timestamp
+        "timestamp": datetime.utcnow()
     })
 
 def get_ticket(ticket_id):
@@ -127,7 +138,6 @@ async def receive_support_message(message: types.Message, state: FSMContext):
 async def admin_reply(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
-
     try:
         parts = message.text.split(maxsplit=2)
         ticket_id, reply_text = parts[1], parts[2]
