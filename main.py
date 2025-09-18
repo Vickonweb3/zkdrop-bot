@@ -11,15 +11,15 @@ from handlers.start_handler import router as start_router
 from handlers.airdrop_notify import router as airdrop_router
 from handlers.admin_handler import router as admin_router
 from handlers.menu_handler import router as menu_router
+from handlers import support  # Added support handler
 from utils.scheduler import start_scheduler
+from pymongo import MongoClient
 
 # ===== CRITICAL PLAYWRIGHT SETUP =====
 os.environ['PLAYWRIGHT_BROWSERS_PATH'] = '/tmp/ms-playwright'
 
-# Create directory structure with full permissions (safe if already exists)
 os.makedirs('/tmp/ms-playwright/chromium-1105/chrome-linux', exist_ok=True, mode=0o777)
 
-# Download and extract Chromium manually if not present
 CHROME_PATH = '/tmp/ms-playwright/chromium-1105/chrome-linux/chrome'
 if not os.path.exists(CHROME_PATH):
     os.system("wget -q https://playwright.azureedge.net/builds/chromium/1105/chromium-linux.zip -O /tmp/chromium.zip")
@@ -38,9 +38,52 @@ WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
 last_webhook_hit = time.time()
 
+# ===== MongoDB Setup =====
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+mongo_client = MongoClient(MONGO_URI)
+db = mongo_client["zkdrop_bot"]
+tickets_collection = db["support_tickets"]
+banned_collection = db["banned_users"]
 
+# -----------------------------
+# MongoDB helper functions
+# -----------------------------
+def get_next_ticket_number():
+    last_ticket = tickets_collection.find_one(sort=[("ticket_number", -1)])
+    return (last_ticket["ticket_number"] + 1) if last_ticket else 1
+
+def log_support_ticket(ticket_id, user_id, username, category, message, status="Open"):
+    ticket_number = int(ticket_id.split("-")[-1])
+    tickets_collection.insert_one({
+        "ticket_id": ticket_id,
+        "ticket_number": ticket_number,
+        "user_id": user_id,
+        "username": username,
+        "category": category,
+        "message": message,
+        "status": status,
+        "timestamp": datetime.now()
+    })
+
+def get_ticket(ticket_id):
+    return tickets_collection.find_one({"ticket_id": ticket_id})
+
+def update_ticket_status(ticket_id, status):
+    tickets_collection.update_one({"ticket_id": ticket_id}, {"$set": {"status": status}})
+
+def log_banned_user(user_id):
+    banned_collection.update_one({"user_id": user_id}, {"$set": {"user_id": user_id}}, upsert=True)
+
+def remove_banned_user(user_id):
+    banned_collection.delete_one({"user_id": user_id})
+
+def get_banned_users():
+    return [doc["user_id"] for doc in banned_collection.find()]
+
+# -----------------------------
+# Keep last_webhook_hit updated
+# -----------------------------
 async def keep_alive_telegram(bot: Bot):
-    """Ping Telegram every 1 min"""
     while True:
         try:
             me = await bot.get_me()
@@ -48,18 +91,13 @@ async def keep_alive_telegram(bot: Bot):
         except Exception as e:
             logger.error(f"❌ Telegram ping failed: {e}")
             try:
-                await bot.send_message(
-                    chat_id=ADMIN_ID,
-                    text=f"🚨 *Telegram API down!*\n`{str(e)}`",
-                    parse_mode="Markdown"
-                )
+                await bot.send_message(ADMIN_ID, f"🚨 *Telegram API down!*\n`{str(e)}`", parse_mode="Markdown")
             except Exception:
-                logger.exception("Failed to notify admin about Telegram ping failure")
+                logger.exception("Failed to notify admin")
         await asyncio.sleep(60)
 
 
 async def periodic_webhook_reset(bot: Bot):
-    """Reset webhook every 10 min"""
     while True:
         try:
             await bot.set_webhook(WEBHOOK_URL)
@@ -67,55 +105,43 @@ async def periodic_webhook_reset(bot: Bot):
         except Exception as e:
             logger.error(f"❌ Webhook reset failed: {e}")
             try:
-                await bot.send_message(
-                    chat_id=ADMIN_ID,
-                    text=f"🚨 *Webhook reset failed!*\n`{str(e)}`",
-                    parse_mode="Markdown"
-                )
+                await bot.send_message(ADMIN_ID, f"🚨 *Webhook reset failed!*\n`{str(e)}`", parse_mode="Markdown")
             except Exception:
-                logger.exception("Failed to notify admin about webhook reset failure")
+                logger.exception("Failed to notify admin")
         await asyncio.sleep(600)
 
 
 async def monitor_webhook_inactivity(bot: Bot):
-    """Alert if webhook silent for 5 min"""
     global last_webhook_hit
     while True:
         now = time.time()
         if now - last_webhook_hit > 300:
             try:
-                await bot.send_message(
-                    ADMIN_ID,
-                    "🚨 *No webhook updates in 5 minutes!*",
-                    parse_mode="Markdown"
-                )
+                await bot.send_message(ADMIN_ID, "🚨 *No webhook updates in 5 minutes!*", parse_mode="Markdown")
                 logger.warning("⚠️ Webhook inactive >5 mins.")
                 last_webhook_hit = now
             except Exception:
-                logger.exception("Failed to notify admin about webhook inactivity")
+                logger.exception("Failed to notify admin about inactivity")
         await asyncio.sleep(60)
 
 
 # ✅ Web Handlers
 async def handle(request):
-    """Health check endpoint"""
     return web.Response(text="✅ ZK Drop Bot is live...")
 
-
 async def uptime_check(request):
-    """Uptime monitoring"""
     return web.Response(status=200, text="🟢 Uptime check OK")
 
-
 class CustomRequestHandler(SimpleRequestHandler):
-    """Track webhook activity"""
     async def _handle(self, request: web.Request):
         global last_webhook_hit
         last_webhook_hit = time.time()
         return await super()._handle(request)
 
 
-# ✅ Main App Setup
+# =========================
+# Main App Setup
+# =========================
 def main():
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher()
@@ -125,44 +151,34 @@ def main():
     dp.include_router(airdrop_router)
     dp.include_router(admin_router)
     dp.include_router(menu_router)
+    dp.include_router(support.router)  # <- support system
 
     app = web.Application()
 
-    # Register routes
     app.router.add_get("/", handle)
     app.router.add_get("/uptime", uptime_check)
     CustomRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
 
     async def on_startup(app):
-        """Initialize everything when starting"""
         await bot.set_webhook(WEBHOOK_URL)
         await bot.set_my_commands([
             BotCommand(command="start", description="Start or restart the bot"),
             BotCommand(command="menu", description="Open the main menu"),
         ])
 
-        # Start background tasks (we do NOT start the continuous zealy_scraper_task here
-        # because the scheduler will run scrapes and broadcasts).
-        # If you previously had: app['zealy_scraper'] = asyncio.create_task(zealy_scraper_task(bot))
-        # comment or remove that line to avoid double-running scrapers.
+        # Start background tasks
         app['telegram_heartbeat'] = asyncio.create_task(keep_alive_telegram(bot))
         app['webhook_monitor'] = asyncio.create_task(periodic_webhook_reset(bot))
         app['webhook_activity_checker'] = asyncio.create_task(monitor_webhook_inactivity(bot))
 
-        # Start the scheduler which will run live/interval/daily jobs and handle broadcasting
+        # Start the scheduler for broadcasting/tasks
         start_scheduler(bot)
         logger.info("🚀 Bot fully initialized")
 
     async def on_shutdown(app):
-        """Cleanup before shutdown"""
         logger.warning("💤 Shutting down...")
 
-        # Cancel background tasks we created
-        for task_name in [
-            'telegram_heartbeat',
-            'webhook_monitor',
-            'webhook_activity_checker'
-        ]:
+        for task_name in ['telegram_heartbeat', 'webhook_monitor', 'webhook_activity_checker']:
             task = app.get(task_name)
             if task:
                 task.cancel()
