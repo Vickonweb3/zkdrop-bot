@@ -1,9 +1,10 @@
+# main.py — Production-ready for Render Deployment
 import logging
 import os
 import asyncio
 import time
 from datetime import datetime
-from aiogram import Bot, Dispatcher
+from aiogram import Bot, Dispatcher, types
 from aiogram.types import BotCommand
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
@@ -15,13 +16,19 @@ from handlers.menu_handler import router as menu_router
 from handlers import support  # support handler
 from utils.scheduler import start_scheduler
 from pymongo import MongoClient
+
+# Optional: Use RedisStorage for FSM persistence (recommended for production)
+# from aiogram.fsm.storage.redis import RedisStorage
+# storage = RedisStorage.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+
 from aiogram.fsm.storage.memory import MemoryStorage
+storage = MemoryStorage()  # fallback if Redis not used
 
 # ===== CRITICAL PLAYWRIGHT SETUP =====
 os.environ['PLAYWRIGHT_BROWSERS_PATH'] = '/tmp/ms-playwright'
 os.makedirs('/tmp/ms-playwright/chromium-1105/chrome-linux', exist_ok=True, mode=0o777)
-
 CHROME_PATH = '/tmp/ms-playwright/chromium-1105/chrome-linux/chrome'
+
 if not os.path.exists(CHROME_PATH):
     os.system("wget -q https://playwright.azureedge.net/builds/chromium/1105/chromium-linux.zip -O /tmp/chromium.zip")
     os.system("unzip -q /tmp/chromium.zip -d /tmp/ms-playwright/chromium-1105")
@@ -30,7 +37,7 @@ if not os.path.exists(CHROME_PATH):
 # =========================
 # Logging
 # =========================
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
 logger = logging.getLogger(__name__)
 
 WEBHOOK_HOST = os.getenv("WEBHOOK_HOST", "https://zkdrop-bot.onrender.com")
@@ -38,6 +45,7 @@ WEBHOOK_PATH = "/webhook"
 WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
 last_webhook_hit = time.time()
+webhook_inactivity_notified = False  # Prevent multiple alerts
 
 # =========================
 # MongoDB Setup
@@ -55,7 +63,6 @@ support.setup_collections(tickets_collection, banned_collection)
 # Bot & Dispatcher
 # =========================
 bot = Bot(token=BOT_TOKEN)
-storage = MemoryStorage()  # FSM storage for support tickets
 dp = Dispatcher(storage=storage)
 
 # =========================
@@ -65,7 +72,7 @@ dp.include_router(start_router)
 dp.include_router(airdrop_router)
 dp.include_router(admin_router)
 dp.include_router(menu_router)
-dp.include_router(support.router)  # support system
+dp.include_router(support.router)
 
 # =========================
 # Background Tasks
@@ -97,16 +104,18 @@ async def periodic_webhook_reset(bot: Bot):
         await asyncio.sleep(600)
 
 async def monitor_webhook_inactivity(bot: Bot):
-    global last_webhook_hit
+    global last_webhook_hit, webhook_inactivity_notified
     while True:
         now = time.time()
-        if now - last_webhook_hit > 300:
+        if now - last_webhook_hit > 300 and not webhook_inactivity_notified:
             try:
                 await bot.send_message(ADMIN_ID, "🚨 *No webhook updates in 5 minutes!*", parse_mode="Markdown")
                 logger.warning("⚠️ Webhook inactive >5 mins.")
-                last_webhook_hit = now
+                webhook_inactivity_notified = True
             except Exception:
                 logger.exception("Failed to notify admin about inactivity")
+        elif now - last_webhook_hit <= 300:
+            webhook_inactivity_notified = False
         await asyncio.sleep(60)
 
 # =========================
@@ -134,20 +143,27 @@ def main():
     CustomRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
 
     async def on_startup(app):
-        await bot.set_webhook(WEBHOOK_URL)
-        await bot.set_my_commands([
-            BotCommand(command="start", description="Start or restart the bot"),
-            BotCommand(command="menu", description="Open the main menu"),
-        ])
+        try:
+            await bot.set_webhook(WEBHOOK_URL)
+            await bot.set_my_commands([
+                BotCommand(command="start", description="Start or restart the bot"),
+                BotCommand(command="menu", description="Open the main menu"),
+            ])
+            # Start background tasks
+            app['telegram_heartbeat'] = asyncio.create_task(keep_alive_telegram(bot))
+            app['webhook_monitor'] = asyncio.create_task(periodic_webhook_reset(bot))
+            app['webhook_activity_checker'] = asyncio.create_task(monitor_webhook_inactivity(bot))
 
-        # Start background tasks
-        app['telegram_heartbeat'] = asyncio.create_task(keep_alive_telegram(bot))
-        app['webhook_monitor'] = asyncio.create_task(periodic_webhook_reset(bot))
-        app['webhook_activity_checker'] = asyncio.create_task(monitor_webhook_inactivity(bot))
+            # Start scheduler
+            try:
+                start_scheduler(bot)
+                logger.info("⏱ Scheduler started successfully")
+            except Exception:
+                logger.exception("❌ Scheduler failed to start")
 
-        # Start the scheduler for broadcasting/tasks
-        start_scheduler(bot)
-        logger.info("🚀 Bot fully initialized")
+            logger.info("🚀 Bot fully initialized")
+        except Exception:
+            logger.exception("❌ Failed during startup")
 
     async def on_shutdown(app):
         logger.warning("💤 Shutting down...")
