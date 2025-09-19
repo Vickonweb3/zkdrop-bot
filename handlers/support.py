@@ -1,3 +1,5 @@
+# support.py — Fully Updated for Render Deployment
+
 import logging
 from aiogram import types, Router
 from aiogram.fsm.context import FSMContext
@@ -40,6 +42,7 @@ def setup_collections(tickets, banned):
     global tickets_collection, banned_collection
     tickets_collection = tickets
     banned_collection = banned
+    logger.info("✅ Support collections initialized")
 
 # ----------------------------
 # Helper functions
@@ -60,6 +63,7 @@ def log_support_ticket(ticket_id, user_id, username, category, message, status="
         "status": status,
         "timestamp": datetime.utcnow()
     })
+    logger.info(f"📌 Ticket {ticket_id} logged in DB")
 
 def get_ticket(ticket_id):
     return tickets_collection.find_one({"ticket_id": ticket_id})
@@ -69,9 +73,11 @@ def update_ticket_status(ticket_id, status):
 
 def log_banned_user(user_id):
     banned_collection.update_one({"user_id": user_id}, {"$set": {"user_id": user_id}}, upsert=True)
+    logger.info(f"🚫 User {user_id} banned from support")
 
 def remove_banned_user(user_id):
     banned_collection.delete_one({"user_id": user_id})
+    logger.info(f"✅ User {user_id} unbanned from support")
 
 def get_banned_users():
     return [doc["user_id"] for doc in banned_collection.find()]
@@ -86,11 +92,14 @@ async def start_support(message: types.Message, state: FSMContext):
         await message.answer("❌ You are restricted from submitting support tickets.")
         return
 
+    # Ensure the keyboard always has at least one row to prevent ValidationError
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     for cat in CATEGORIES:
-        keyboard.add(cat)
+        keyboard.row(types.KeyboardButton(text=cat))
+
     await message.answer("📝 Select a category for your support ticket:", reply_markup=keyboard)
     await state.set_state(SupportStates.waiting_for_category)
+    logger.info(f"User {user_id} started support flow")
 
 @router.message(SupportStates.waiting_for_category)
 async def receive_category(message: types.Message, state: FSMContext):
@@ -102,6 +111,7 @@ async def receive_category(message: types.Message, state: FSMContext):
     await state.update_data(category=category)
     await message.answer("✏️ Type your support message:", reply_markup=types.ReplyKeyboardRemove())
     await state.set_state(SupportStates.waiting_for_message)
+    logger.info(f"User {message.from_user.id} selected category: {category}")
 
 @router.message(SupportStates.waiting_for_message)
 async def receive_support_message(message: types.Message, state: FSMContext):
@@ -122,10 +132,12 @@ async def receive_support_message(message: types.Message, state: FSMContext):
         f"Message:\n{text}\n"
         f"Timestamp: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
     )
+
     try:
-        await message.bot.send_message(ADMIN_ID, support_msg)
+        await message.bot.send_message(int(ADMIN_ID), support_msg)
+        logger.info(f"✅ Ticket {ticket_id} sent to admin")
     except Exception as e:
-        logger.exception(f"Failed to send ticket {ticket_id} to admin: {e}")
+        logger.exception(f"❌ Failed to send ticket {ticket_id} to admin: {e}")
 
     log_support_ticket(ticket_id, user_id, user_name, category, text)
     await message.answer(f"✅ Your ticket {ticket_id} has been submitted! We'll reply soon.")
@@ -136,7 +148,7 @@ async def receive_support_message(message: types.Message, state: FSMContext):
 # ----------------------------
 @router.message(Command(commands=["reply"]))
 async def admin_reply(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id != int(ADMIN_ID):
         return
     try:
         parts = message.text.split(maxsplit=2)
@@ -155,35 +167,36 @@ async def admin_reply(message: types.Message):
         await message.bot.send_message(user_id, f"💬 Reply from Support: {reply_text}")
         await message.answer(f"✅ Message sent to {user_id}")
         update_ticket_status(ticket_id, "Replied")
+        logger.info(f"💬 Replied to ticket {ticket_id} for user {user_id}")
     except Exception as e:
-        logger.exception(f"Failed to reply to ticket {ticket_id}: {e}")
+        logger.exception(f"❌ Failed to reply to ticket {ticket_id}: {e}")
         await message.answer("❌ Failed to send message to user.")
 
 @router.message(Command(commands=["ban"]))
 async def ban_user(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id != int(ADMIN_ID):
         return
     try:
         user_id = int(message.text.split()[1])
         log_banned_user(user_id)
         await message.answer(f"✅ User {user_id} banned from support.")
-    except:
+    except Exception:
         await message.answer("❌ Usage: /ban <user_id>")
 
 @router.message(Command(commands=["unban"]))
 async def unban_user(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id != int(ADMIN_ID):
         return
     try:
         user_id = int(message.text.split()[1])
         remove_banned_user(user_id)
         await message.answer(f"✅ User {user_id} unbanned from support.")
-    except:
+    except Exception:
         await message.answer("❌ Usage: /unban <user_id>")
 
 @router.message(Command(commands=["banned"]))
 async def list_banned_users(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id != int(ADMIN_ID):
         return
     banned_list = get_banned_users()
     if not banned_list:
